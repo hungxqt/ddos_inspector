@@ -9,6 +9,17 @@ Task ID | Task                                    | An   | Phat | Hung | Hieu | 
 0.7     | Phase 0 wrap-up & sign-off              | I    | A/R  | I    | I    | I
 
 
+1.1     | Kick-off & Setup                        | A/R  | C    | C    | C    | C
+1.2     | Source Gathering                        | A/R  | C    | C    | C    | C
+1.3     | Annotation & Peer Review                | A/R  | C    | C    | C    | C
+1.4     | Consolidation & Insight Extraction      | A/R  | C    | C    | C    | C
+1.5     | Drafting Literature Review              | A/R  | C    | C    | C    | C
+1.6     | Final Review & Submission               | A/R  | C    | C    | C    | C
+1.7     | Phase 1 wrap-up & sign-off              | I    | A/R  | I    | I    | I
+
+
+
+
 
 **Responsible (R): the person(s) who actually do the work
 
