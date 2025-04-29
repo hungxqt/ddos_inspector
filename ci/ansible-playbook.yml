@@ -1,1 +1,33 @@
-
+- hosts: all
+  become: true
+  tasks:
+    - apt:
+        name:
+          - snort3
+          - mininet
+          - hping3
+          - python3-pip
+        update_cache: yes
+    - pip:
+        name:
+          - slowloris
+    - user:
+        name: "{{ item }}"
+        shell: /bin/bash
+        state: present
+      loop:
+        - an
+        - phat
+        - hung
+        - hieu
+        - dat
+    - authorized_key:
+        user: "{{ item }}"
+        state: present
+        key: "{{ lookup('file', 'ci/keys/' + item + '.pub') }}"
+      loop:
+        - an
+        - phat
+        - hung
+        - hieu
+        - dat
