@@ -1,14 +1,17 @@
-name: CI
+name: CI Pipeline
 
 on:
   push:
-    branches: [ develop, main ]
+    branches: [develop, main]
   pull_request:
-    branches: [ develop, main ]
+    branches: [develop, main]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc-10, gcc-12]
     steps:
       - uses: actions/checkout@v3
 
@@ -16,7 +19,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libpcap-dev \
-                                   libboost-all-dev snort3
+                                   libboost-all-dev snort3 clang-tidy
+          sudo apt-get install -y gcc-10 g++-10 gcc-12 g++-12
+
+      - name: Set compiler
+        run: |
+          export CC=${{ matrix.compiler }}
+          export CXX=${{ matrix.compiler }}++
 
       - name: Build
         run: |
@@ -24,7 +33,7 @@ jobs:
           cmake .. 
           make -j$(nproc)
 
-      - name: Run unit tests
+      - name: Run Unit Tests
         run: |
           cd build
           ctest --output-on-failure
@@ -33,3 +42,17 @@ jobs:
         run: |
           cd build
           run-clang-tidy
+
+      - name: Archive Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: Build-Artifacts
+          path: build/
+
+      - name: Archive Test Logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: Test-Logs
+          path: build/Testing/Temporary/LastTest.log
