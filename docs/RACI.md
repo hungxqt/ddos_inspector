@@ -11,13 +11,13 @@
 
 
 
-| Task ID |      Sub-Phase        |   Start Date   |   End Date   |                   Deliverable                        |   Person in Charge   |
-| ------- | --------------------- | -------------- | ------------ | ---------------------------------------------------- | -------------------- |
-|   1.1   | Literature Review     | 08/05/2025     | 12/05/2025   | Comprehensive review of Snort, SnortML, DDoS attacks | Whole team           |(DONE)
-|   1.2   | Technical Analysis    | 12/05/2025     | 15/05/2025   | Analysis of Snort rules, SnortML architecture        | Dat, Hieu            |(DONE)
-|   1.3   | Gap Identification    | 15/05/2025     | 15/05/2025   | Identification of weaknesses in existing methods     | An, Hung             |(DONE)
-|   1.4   | Research Drafting     | 16/05/2025     | 16/05/2025   | Draft of findings and technical notes                | Phat, Dat, Hieu      |
-|   1.5   | Initial Documentation | 17/05/2025     | 17/05/2025   | Organized documentation for next phases              | Phat, An             |
+| Task ID |      Sub-Phase        |   Start Date   |   End Date   |   Person in Charge   |
+| ------- | --------------------- | -------------- | ------------ | -------------------- |
+|   1.1   | Literature Review     | 08/05/2025     | 12/05/2025   | Whole team           |(DONE)
+|   1.2   | Technical Analysis    | 12/05/2025     | 15/05/2025   | Dat, Hieu            |(DONE)
+|   1.3   | Gap Identification    | 15/05/2025     | 15/05/2025   | An, Hung             |(DONE)
+|   1.4   | Research Drafting     | 16/05/2025     | 16/05/2025   | Phat, Dat, Hieu      |
+|   1.5   | Initial Documentation | 17/05/2025     | 17/05/2025   | Phat, An             |
 
 
 
