@@ -1,5 +1,12 @@
 # ddos_inspector - Smarter DDoS Detection Module for Snort 3
 
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+![C++](https://img.shields.io/badge/language-C++-blue)
+![Snort 3](https://img.shields.io/badge/snort-3.x-critical)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Contributions](https://img.shields.io/badge/contributions-welcome-orange)
+
+
 **ddos_inspector** is a lightweight, real-time DDoS detection and mitigation plugin designed for [Snort 3](https://snort.org/). Unlike traditional static rule-based detection or heavy ML-based systems like SnortML, this plugin combines statistical methods and behavioral profiling to identify and block malicious traffic — all with minimal system overhead.
 
 ---
