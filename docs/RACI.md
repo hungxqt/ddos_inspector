@@ -11,23 +11,31 @@
 
 
 
-| Task ID |      Sub-Phase        |   Start Date   |   End Date   |                   Deliverable                        |   Person in Charge   |
-| ------- | --------------------- | -------------- | ------------ | ---------------------------------------------------- | -------------------- |
-|   1.1   | Literature Review     | 08/05/2025     | 12/05/2025   | Comprehensive review of Snort, SnortML, DDoS attacks | Whole team           |
-|   1.2   | Technical Analysis    | 12/05/2025     | 15/05/2025   | Analysis of Snort rules, SnortML architecture        | Dat, Hieu            |
-|   1.3   | Gap Identification    | 15/05/2025     | 15/05/2025   | Identification of weaknesses in existing methods     | An, Hung             |
-|   1.4   | Research Drafting     | 16/05/2025     | 16/05/2025   | Draft of findings and technical notes                | Phat, Dat, Hieu      |
-|   1.5   | Initial Documentation | 17/05/2025     | 17/05/2025   | Organized documentation for next phases              | Phat, An             |
+| Task ID |      Sub-Phase        |   Start Date   |   End Date   |   Person in Charge   |
+| ------- | --------------------- | -------------- | ------------ | -------------------- |
+|   1.1   | Literature Review     | 08/05/2025     | 12/05/2025   | Whole team           |(DONE)
+|   1.2   | Technical Analysis    | 12/05/2025     | 15/05/2025   | Dat, Hieu            |(DONE)
+|   1.3   | Gap Identification    | 15/05/2025     | 15/05/2025   | An, Hung             |(DONE)
+|   1.4   | Research Drafting     | 16/05/2025     | 16/05/2025   | Phat, Dat, Hieu      |
+|   1.5   | Initial Documentation | 17/05/2025     | 17/05/2025   | Phat, An             |
 
 
 
 
+| Task ID |                            Sub-Phase                        |   Start Date   |   End Date   |     Person in Charge     |
+| ------- | ----------------------------------------------------------- | -------------- | ------------ | ------------------------ |
+|   2.1   | Define plugin interface hooks (Snort 3 modular API)         | 17/05/2025     | 19/05/2025   | An, Hung (Phat, Dat <C>) |
+|   2.2   | Design pre-filtering logic (exclude non-TCP/UDP traffic)    | 19/05/2025     | 21/05/2025   | An, Hung (Phat, Dat <C>) |
+|   2.3   | Specify EWMA, entropy, and behavior detection modules       | 21/05/2025     | 22/05/2025   | An, Hung, Phat (Dat <C>) |
+|   2.4   | Design shared data pipeline (Boost SPSC queue, metrics)     | 22/05/2025     | 23/05/2025   | An, Hung (Dat <C>)       |
+|   2.5   | Finalize mitigation logic + rollback & auto-unban design    | 23/05/2025     | 25/05/2025   | An, Hung (Dat <C>)       |
 
 
-**Responsible (R): the person(s) who actually do the work
 
-Accountable (A): the person who owns the outcome and must sign off
 
-Consulted (C): those whose opinions are sought (two-way communication)
-
-Informed (I): those who are kept up-to-date (one-way communication)**
+|       CODE        |                    ROLE                                   |
+| ----------------- | --------------------------------------------------------- |
+|  Responsible (R)  |         The person(s) who actually do the work            |
+|  Accountable (A)  |     The person who owns the outcome and must sign off     |
+|   Consulted (C)   |  Those whose opinions are sought (two-way communication)  |
+|    Informed (I)   |   Those who are kept up-to-date (one-way communication)   |
