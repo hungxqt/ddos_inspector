@@ -16,8 +16,8 @@
 |   1.1   | Literature Review     | 08/05/2025     | 12/05/2025   | Whole team           |(DONE)
 |   1.2   | Technical Analysis    | 12/05/2025     | 15/05/2025   | Dat, Hieu            |(DONE)
 |   1.3   | Gap Identification    | 15/05/2025     | 15/05/2025   | An, Hung             |(DONE)
-|   1.4   | Research Drafting     | 16/05/2025     | 16/05/2025   | Phat, Dat, Hieu      |
-|   1.5   | Initial Documentation | 17/05/2025     | 17/05/2025   | Phat, An             |
+|   1.4   | Research Drafting     | 16/05/2025     | 16/05/2025   | Phat, Dat, Hieu      |(DONE)
+|   1.5   | Initial Documentation | 17/05/2025     | 17/05/2025   | Phat, An             |(PENDING)
 
 
 
