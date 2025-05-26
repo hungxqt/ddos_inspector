@@ -155,7 +155,25 @@ docker-compose up -d
 
 ## ⚙️ Step 5: Start Exporters
 
-### A. Metrics Exporter (C++)
+### 1. System Libraries
+Run this to install required packages:
+```bash
+sudo apt update
+sudo apt install -y g++ cmake libmicrohttpd-dev libcurl4-openssl-dev libssl-dev
+```
+
+### 2. prometheus-cpp Library
+Build and install the C++ Prometheus client library:
+```bash
+git clone https://github.com/jupp0r/prometheus-cpp.git
+cd prometheus-cpp
+mkdir _build && cd _build
+cmake .. -DBUILD_SHARED_LIBS=ON
+make -j$(nproc)
+sudo make install
+```
+
+### Option A. Metrics Exporter (C++)
 
 Compile:
 ```bash
@@ -166,7 +184,7 @@ Run:
 ./exporter
 ```
 
-### B. Snort Stats Exporter (Python)
+### Option B. Snort Stats Exporter (Python)
 
 ```bash
 python3 snort_stats_exporter.py
