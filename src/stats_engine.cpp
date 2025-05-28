@@ -1,7 +1,6 @@
 #include "stats_engine.hpp"
 #include <cmath>
 #include <unordered_map>
-#include <iostream>
 
 StatsEngine::StatsEngine(double entropy_threshold, double ewma_alpha)
     : entropy_threshold(entropy_threshold), ewma_alpha(ewma_alpha) {
