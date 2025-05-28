@@ -24,11 +24,39 @@
 	ProcessorClockFrequency="2496"
 	>
 	<Testing>
-		<StartDateTime>May 28 20:55 +07</StartDateTime>
-		<StartTestTime>1748440519</StartTestTime>
-		<TestList/>
-		<EndDateTime>May 28 20:55 +07</EndDateTime>
-		<EndTestTime>1748440519</EndTestTime>
+		<StartDateTime>May 28 21:12 +07</StartDateTime>
+		<StartTestTime>1748441521</StartTestTime>
+		<TestList>
+			<Test>./FirewallActionTests</Test>
+		</TestList>
+		<Test Status="passed">
+			<Name>FirewallActionTests</Name>
+			<Path>.</Path>
+			<FullName>./FirewallActionTests</FullName>
+			<FullCommandLine>/home/hungqt/res/build/test_firewall_action</FullCommandLine>
+			<Results>
+				<NamedMeasurement type="numeric/double" name="Execution Time">
+					<Value>24.0377</Value>
+				</NamedMeasurement>
+				<NamedMeasurement type="numeric/double" name="Processors">
+					<Value>1</Value>
+				</NamedMeasurement>
+				<NamedMeasurement type="text/string" name="Completion Status">
+					<Value>Completed</Value>
+				</NamedMeasurement>
+				<NamedMeasurement type="text/string" name="Command Line">
+					<Value>/home/hungqt/res/build/test_firewall_action</Value>
+				</NamedMeasurement>
+				<NamedMeasurement type="text/string" name="Environment">
+					<Value>#CTEST_RESOURCE_GROUP_COUNT=</Value>
+				</NamedMeasurement>
+				<Measurement>
+					<Value encoding="base64" compression="gzip">eJyllMtuwjAQRff5ilnCggQq1F0XRUCFqlKEoBsUIeMMZFTHTv3g8fd1Eor6QChRZ5OMcufM9Tj23ElJcgcZI9lqw1arDKJUZRilTu4+bKTRRBtHIonWCeYm2im1E2jR2I7R/FsalWnxti5gIefB6uESMczPnXp9KESm6tUrEzCOLIbBqnOJGJ6E2jBRfUe5J61khtJr0XZc/kv8kzomjQcmxCO3pOQQLSOBycILghXMl1MoI76hCwfMEB8Ixd+XclM8xk6WKibInjymitfn/2Cg1YXMtGubGrpcEGcWS6Kf5kzj3s/E62o7usFoaufFCUu5wMnsi1Xbxd/Sps3P85wqOTqSsX4Fk1nt9teKmxpYUIbKWb/DmIyOOWnWaB+ul0Prvttt+FPQdovaL+FMfGPCoanpIwz9QVqkZCBn2oLagk2xOnMelTsLB2ZAY6b2mIAhyRHIn8cjR0xMJU79HZEqkRTVve5dHzYnDwjj4BN4An3k====</Value>
+				</Measurement>
+			</Results>
+		</Test>
+		<EndDateTime>May 28 21:12 +07</EndDateTime>
+		<EndTestTime>1748441545</EndTestTime>
 		<ElapsedMinutes>0</ElapsedMinutes>
 	</Testing>
 </Site>
