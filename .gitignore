@@ -102,3 +102,6 @@ node_modules/
 # Environment files
 .env
 .env.local
+
+#.cache
+.cache
