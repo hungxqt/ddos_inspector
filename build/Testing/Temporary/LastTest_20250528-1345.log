@@ -1,10 +1,18 @@
+<<<<<<< HEAD
 Start testing: May 28 21:14 +07
+=======
+Start testing: May 28 21:12 +07
+>>>>>>> 75e07a1 (update3)
 ----------------------------------------------------------
 4/4 Testing: FirewallActionTests
 4/4 Test: FirewallActionTests
 Command: "/home/hungqt/res/build/test_firewall_action"
 Directory: /home/hungqt/res/build
+<<<<<<< HEAD
 "FirewallActionTests" start time: May 28 21:14 +07
+=======
+"FirewallActionTests" start time: May 28 21:12 +07
+>>>>>>> 75e07a1 (update3)
 Output:
 ----------------------------------------------------------
 Running main() from /home/hungqt/res/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -30,26 +38,47 @@ Running main() from /home/hungqt/res/build/_deps/googletest-src/googletest/src/g
 [ RUN      ] FirewallActionDetailedTest.EmptyAndSpecialIPHandling
 [       OK ] FirewallActionDetailedTest.EmptyAndSpecialIPHandling (0 ms)
 [ RUN      ] FirewallActionDetailedTest.HighVolumeBlocking
+<<<<<<< HEAD
 [       OK ] FirewallActionDetailedTest.HighVolumeBlocking (13 ms)
 [ RUN      ] FirewallActionDetailedTest.ConcurrentAccess
 [       OK ] FirewallActionDetailedTest.ConcurrentAccess (21 ms)
+=======
+[       OK ] FirewallActionDetailedTest.HighVolumeBlocking (12 ms)
+[ RUN      ] FirewallActionDetailedTest.ConcurrentAccess
+[       OK ] FirewallActionDetailedTest.ConcurrentAccess (20 ms)
+>>>>>>> 75e07a1 (update3)
 [ RUN      ] FirewallActionDetailedTest.BlockingStatsPersistence
 [       OK ] FirewallActionDetailedTest.BlockingStatsPersistence (0 ms)
 [ RUN      ] FirewallActionDetailedTest.CleanupFunctionality
 [       OK ] FirewallActionDetailedTest.CleanupFunctionality (6000 ms)
 [ RUN      ] FirewallActionDetailedTest.MixedTimeoutBehavior
 [       OK ] FirewallActionDetailedTest.MixedTimeoutBehavior (6000 ms)
+<<<<<<< HEAD
 [----------] 14 tests from FirewallActionDetailedTest (24037 ms total)
 
 [----------] Global test environment tear-down
 [==========] 14 tests from 1 test suite ran. (24037 ms total)
+=======
+[----------] 14 tests from FirewallActionDetailedTest (24034 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 1 test suite ran. (24034 ms total)
+>>>>>>> 75e07a1 (update3)
 [  PASSED  ] 14 tests.
 <end of output>
 Test time =  24.04 sec
 ----------------------------------------------------------
 Test Passed.
+<<<<<<< HEAD
 "FirewallActionTests" end time: May 28 21:14 +07
 "FirewallActionTests" time elapsed: 00:00:24
 ----------------------------------------------------------
 
 End testing: May 28 21:14 +07
+=======
+"FirewallActionTests" end time: May 28 21:12 +07
+"FirewallActionTests" time elapsed: 00:00:24
+----------------------------------------------------------
+
+End testing: May 28 21:12 +07
+>>>>>>> 75e07a1 (update3)
