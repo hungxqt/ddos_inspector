@@ -1,0 +1,217 @@
+Start testing: May 28 20:41 +07
+----------------------------------------------------------
+1/4 Testing: AllTests
+1/4 Test: AllTests
+Command: "/home/hungqt/res/build/unit_tests"
+Directory: /home/hungqt/res/build
+"AllTests" start time: May 28 20:41 +07
+Output:
+----------------------------------------------------------
+[==========] Running 13 tests from 5 test suites.
+[----------] Global test environment set-up.
+[----------] 4 tests from StatsEngineTest
+[ RUN      ] StatsEngineTest.InitializationTest
+[       OK ] StatsEngineTest.InitializationTest (0 ms)
+[ RUN      ] StatsEngineTest.NormalTrafficAnalysis
+[       OK ] StatsEngineTest.NormalTrafficAnalysis (0 ms)
+[ RUN      ] StatsEngineTest.LowEntropyDetection
+[       OK ] StatsEngineTest.LowEntropyDetection (0 ms)
+[ RUN      ] StatsEngineTest.EWMACalculation
+[       OK ] StatsEngineTest.EWMACalculation (0 ms)
+[----------] 4 tests from StatsEngineTest (0 ms total)
+
+[----------] 3 tests from BehaviorTrackerTest
+[ RUN      ] BehaviorTrackerTest.SYNFloodDetection
+[       OK ] BehaviorTrackerTest.SYNFloodDetection (0 ms)
+[ RUN      ] BehaviorTrackerTest.NormalTCPHandshake
+[       OK ] BehaviorTrackerTest.NormalTCPHandshake (0 ms)
+[ RUN      ] BehaviorTrackerTest.HTTPFloodDetection
+[       OK ] BehaviorTrackerTest.HTTPFloodDetection (0 ms)
+[----------] 3 tests from BehaviorTrackerTest (0 ms total)
+
+[----------] 3 tests from FirewallActionTest
+[ RUN      ] FirewallActionTest.BlockIPFunctionality
+[       OK ] FirewallActionTest.BlockIPFunctionality (0 ms)
+[ RUN      ] FirewallActionTest.UnblockIPFunctionality
+[       OK ] FirewallActionTest.UnblockIPFunctionality (0 ms)
+[ RUN      ] FirewallActionTest.MultipleIPBlocking
+[       OK ] FirewallActionTest.MultipleIPBlocking (0 ms)
+[----------] 3 tests from FirewallActionTest (0 ms total)
+
+[----------] 2 tests from PacketDataTest
+[ RUN      ] PacketDataTest.StructInitialization
+[       OK ] PacketDataTest.StructInitialization (0 ms)
+[ RUN      ] PacketDataTest.DataAssignment
+[       OK ] PacketDataTest.DataAssignment (0 ms)
+[----------] 2 tests from PacketDataTest (0 ms total)
+
+[----------] 1 test from IntegrationTest
+[ RUN      ] IntegrationTest.DDoSDetectionFlow
+[       OK ] IntegrationTest.DDoSDetectionFlow (0 ms)
+[----------] 1 test from IntegrationTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 13 tests from 5 test suites ran. (0 ms total)
+[  PASSED  ] 13 tests.
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"AllTests" end time: May 28 20:41 +07
+"AllTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/4 Testing: StatsEngineTests
+2/4 Test: StatsEngineTests
+Command: "/home/hungqt/res/build/test_stats_engine"
+Directory: /home/hungqt/res/build
+"StatsEngineTests" start time: May 28 20:41 +07
+Output:
+----------------------------------------------------------
+Running main() from /home/hungqt/res/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from StatsEngineDetailedTest
+[ RUN      ] StatsEngineDetailedTest.EntropyCalculationAccuracy
+[       OK ] StatsEngineDetailedTest.EntropyCalculationAccuracy (0 ms)
+[ RUN      ] StatsEngineDetailedTest.EWMASmoothing
+[       OK ] StatsEngineDetailedTest.EWMASmoothing (0 ms)
+[ RUN      ] StatsEngineDetailedTest.DifferentThresholdBehavior
+[       OK ] StatsEngineDetailedTest.DifferentThresholdBehavior (0 ms)
+[ RUN      ] StatsEngineDetailedTest.StatisticalAnomalyDetection
+/home/hungqt/res/tests/test_stats_engine.cpp:110: Failure
+Value of: anomaly_detected
+  Actual: false
+Expected: true
+[  FAILED  ] StatsEngineDetailedTest.StatisticalAnomalyDetection (0 ms)
+[ RUN      ] StatsEngineDetailedTest.EmptyPayloadHandling
+[       OK ] StatsEngineDetailedTest.EmptyPayloadHandling (0 ms)
+[ RUN      ] StatsEngineDetailedTest.LargePayloadHandling
+/home/hungqt/res/tests/test_stats_engine.cpp:133: Failure
+Value of: result
+  Actual: false
+Expected: true
+[  FAILED  ] StatsEngineDetailedTest.LargePayloadHandling (0 ms)
+[ RUN      ] StatsEngineDetailedTest.MultipleSourceTracking
+[       OK ] StatsEngineDetailedTest.MultipleSourceTracking (0 ms)
+[ RUN      ] StatsEngineDetailedTest.EdgeCasePayloads
+[       OK ] StatsEngineDetailedTest.EdgeCasePayloads (0 ms)
+[ RUN      ] StatsEngineDetailedTest.PerformanceUnderLoad
+[       OK ] StatsEngineDetailedTest.PerformanceUnderLoad (0 ms)
+[----------] 9 tests from StatsEngineDetailedTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 7 tests.
+[  FAILED  ] 2 tests, listed below:
+[  FAILED  ] StatsEngineDetailedTest.StatisticalAnomalyDetection
+[  FAILED  ] StatsEngineDetailedTest.LargePayloadHandling
+
+ 2 FAILED TESTS
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Failed.
+"StatsEngineTests" end time: May 28 20:41 +07
+"StatsEngineTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/4 Testing: BehaviorTrackerTests
+3/4 Test: BehaviorTrackerTests
+Command: "/home/hungqt/res/build/test_behavior_tracker"
+Directory: /home/hungqt/res/build
+"BehaviorTrackerTests" start time: May 28 20:41 +07
+Output:
+----------------------------------------------------------
+Running main() from /home/hungqt/res/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 11 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 11 tests from BehaviorTrackerDetailedTest
+[ RUN      ] BehaviorTrackerDetailedTest.NormalTCPConnectionFlow
+[       OK ] BehaviorTrackerDetailedTest.NormalTCPConnectionFlow (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.SYNFloodDetection
+[       OK ] BehaviorTrackerDetailedTest.SYNFloodDetection (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.ACKFloodDetection
+[       OK ] BehaviorTrackerDetailedTest.ACKFloodDetection (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.HTTPFloodDetection
+[       OK ] BehaviorTrackerDetailedTest.HTTPFloodDetection (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.SlowlorisDetection
+[       OK ] BehaviorTrackerDetailedTest.SlowlorisDetection (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.MultipleSourceDistributedAttack
+[       OK ] BehaviorTrackerDetailedTest.MultipleSourceDistributedAttack (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.LegitimateTrafficMixedWithAttack
+[       OK ] BehaviorTrackerDetailedTest.LegitimateTrafficMixedWithAttack (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.ConnectionStateTracking
+[       OK ] BehaviorTrackerDetailedTest.ConnectionStateTracking (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.HTTPMethodVarietyDetection
+[       OK ] BehaviorTrackerDetailedTest.HTTPMethodVarietyDetection (0 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.TimeBasedBehaviorReset
+[       OK ] BehaviorTrackerDetailedTest.TimeBasedBehaviorReset (100 ms)
+[ RUN      ] BehaviorTrackerDetailedTest.EdgeCasePackets
+[       OK ] BehaviorTrackerDetailedTest.EdgeCasePackets (0 ms)
+[----------] 11 tests from BehaviorTrackerDetailedTest (100 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 1 test suite ran. (100 ms total)
+[  PASSED  ] 11 tests.
+<end of output>
+Test time =   0.10 sec
+----------------------------------------------------------
+Test Passed.
+"BehaviorTrackerTests" end time: May 28 20:41 +07
+"BehaviorTrackerTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/4 Testing: FirewallActionTests
+4/4 Test: FirewallActionTests
+Command: "/home/hungqt/res/build/test_firewall_action"
+Directory: /home/hungqt/res/build
+"FirewallActionTests" start time: May 28 20:41 +07
+Output:
+----------------------------------------------------------
+Running main() from /home/hungqt/res/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 14 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 14 tests from FirewallActionDetailedTest
+[ RUN      ] FirewallActionDetailedTest.BasicBlockUnblockFunctionality
+[       OK ] FirewallActionDetailedTest.BasicBlockUnblockFunctionality (0 ms)
+[ RUN      ] FirewallActionDetailedTest.DuplicateBlockingPrevention
+[       OK ] FirewallActionDetailedTest.DuplicateBlockingPrevention (0 ms)
+[ RUN      ] FirewallActionDetailedTest.MultipleIPBlocking
+[       OK ] FirewallActionDetailedTest.MultipleIPBlocking (0 ms)
+[ RUN      ] FirewallActionDetailedTest.UnblockNonExistentIP
+[       OK ] FirewallActionDetailedTest.UnblockNonExistentIP (0 ms)
+[ RUN      ] FirewallActionDetailedTest.TimeoutBasedExpiration
+[       OK ] FirewallActionDetailedTest.TimeoutBasedExpiration (6000 ms)
+[ RUN      ] FirewallActionDetailedTest.DifferentTimeoutValues
+[       OK ] FirewallActionDetailedTest.DifferentTimeoutValues (6000 ms)
+[ RUN      ] FirewallActionDetailedTest.InvalidIPHandling
+[       OK ] FirewallActionDetailedTest.InvalidIPHandling (0 ms)
+[ RUN      ] FirewallActionDetailedTest.IPv6AddressSupport
+[       OK ] FirewallActionDetailedTest.IPv6AddressSupport (0 ms)
+[ RUN      ] FirewallActionDetailedTest.EmptyAndSpecialIPHandling
+[       OK ] FirewallActionDetailedTest.EmptyAndSpecialIPHandling (0 ms)
+[ RUN      ] FirewallActionDetailedTest.HighVolumeBlocking
+[       OK ] FirewallActionDetailedTest.HighVolumeBlocking (1 ms)
+[ RUN      ] FirewallActionDetailedTest.ConcurrentAccess
+[       OK ] FirewallActionDetailedTest.ConcurrentAccess (7 ms)
+[ RUN      ] FirewallActionDetailedTest.BlockingStatsPersistence
+[       OK ] FirewallActionDetailedTest.BlockingStatsPersistence (0 ms)
+[ RUN      ] FirewallActionDetailedTest.CleanupFunctionality
+[       OK ] FirewallActionDetailedTest.CleanupFunctionality (6000 ms)
+[ RUN      ] FirewallActionDetailedTest.MixedTimeoutBehavior
+[       OK ] FirewallActionDetailedTest.MixedTimeoutBehavior (6000 ms)
+[----------] 14 tests from FirewallActionDetailedTest (24010 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 1 test suite ran. (24010 ms total)
+[  PASSED  ] 14 tests.
+<end of output>
+Test time =  24.01 sec
+----------------------------------------------------------
+Test Passed.
+"FirewallActionTests" end time: May 28 20:41 +07
+"FirewallActionTests" time elapsed: 00:00:24
+----------------------------------------------------------
+
+End testing: May 28 20:41 +07
