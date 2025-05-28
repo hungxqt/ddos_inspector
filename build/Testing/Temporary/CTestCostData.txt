@@ -1,5 +1,5 @@
-AllTests 2 0.00265767
-StatsEngineTests 1 0
-BehaviorTrackerTests 2 0.0514869
-FirewallActionTests 2 12.0065
+AllTests 6 0.00291279
+StatsEngineTests 5 0.00632426
+BehaviorTrackerTests 6 0.086566
+FirewallActionTests 6 20.0281
 ---

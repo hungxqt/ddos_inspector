@@ -1,3 +1,55 @@
-Start testing: May 28 20:55 +07
+Start testing: May 28 21:14 +07
 ----------------------------------------------------------
-End testing: May 28 20:55 +07
+4/4 Testing: FirewallActionTests
+4/4 Test: FirewallActionTests
+Command: "/home/hungqt/res/build/test_firewall_action"
+Directory: /home/hungqt/res/build
+"FirewallActionTests" start time: May 28 21:14 +07
+Output:
+----------------------------------------------------------
+Running main() from /home/hungqt/res/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 14 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 14 tests from FirewallActionDetailedTest
+[ RUN      ] FirewallActionDetailedTest.BasicBlockUnblockFunctionality
+[       OK ] FirewallActionDetailedTest.BasicBlockUnblockFunctionality (0 ms)
+[ RUN      ] FirewallActionDetailedTest.DuplicateBlockingPrevention
+[       OK ] FirewallActionDetailedTest.DuplicateBlockingPrevention (0 ms)
+[ RUN      ] FirewallActionDetailedTest.MultipleIPBlocking
+[       OK ] FirewallActionDetailedTest.MultipleIPBlocking (0 ms)
+[ RUN      ] FirewallActionDetailedTest.UnblockNonExistentIP
+[       OK ] FirewallActionDetailedTest.UnblockNonExistentIP (0 ms)
+[ RUN      ] FirewallActionDetailedTest.TimeoutBasedExpiration
+[       OK ] FirewallActionDetailedTest.TimeoutBasedExpiration (6000 ms)
+[ RUN      ] FirewallActionDetailedTest.DifferentTimeoutValues
+[       OK ] FirewallActionDetailedTest.DifferentTimeoutValues (6000 ms)
+[ RUN      ] FirewallActionDetailedTest.InvalidIPHandling
+[       OK ] FirewallActionDetailedTest.InvalidIPHandling (0 ms)
+[ RUN      ] FirewallActionDetailedTest.IPv6AddressSupport
+[       OK ] FirewallActionDetailedTest.IPv6AddressSupport (0 ms)
+[ RUN      ] FirewallActionDetailedTest.EmptyAndSpecialIPHandling
+[       OK ] FirewallActionDetailedTest.EmptyAndSpecialIPHandling (0 ms)
+[ RUN      ] FirewallActionDetailedTest.HighVolumeBlocking
+[       OK ] FirewallActionDetailedTest.HighVolumeBlocking (13 ms)
+[ RUN      ] FirewallActionDetailedTest.ConcurrentAccess
+[       OK ] FirewallActionDetailedTest.ConcurrentAccess (21 ms)
+[ RUN      ] FirewallActionDetailedTest.BlockingStatsPersistence
+[       OK ] FirewallActionDetailedTest.BlockingStatsPersistence (0 ms)
+[ RUN      ] FirewallActionDetailedTest.CleanupFunctionality
+[       OK ] FirewallActionDetailedTest.CleanupFunctionality (6000 ms)
+[ RUN      ] FirewallActionDetailedTest.MixedTimeoutBehavior
+[       OK ] FirewallActionDetailedTest.MixedTimeoutBehavior (6000 ms)
+[----------] 14 tests from FirewallActionDetailedTest (24037 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 1 test suite ran. (24037 ms total)
+[  PASSED  ] 14 tests.
+<end of output>
+Test time =  24.04 sec
+----------------------------------------------------------
+Test Passed.
+"FirewallActionTests" end time: May 28 21:14 +07
+"FirewallActionTests" time elapsed: 00:00:24
+----------------------------------------------------------
+
+End testing: May 28 21:14 +07
