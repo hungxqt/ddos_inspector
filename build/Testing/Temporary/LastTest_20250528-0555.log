@@ -1,0 +1,72 @@
+Start testing: May 28 20:08 +07
+----------------------------------------------------------
+1/4 Testing: AllTests
+1/4 Test: AllTests
+Command: "/home/hungqt/res/build/unit_tests"
+Directory: /home/hungqt/res/build
+"AllTests" start time: May 28 20:08 +07
+Output:
+----------------------------------------------------------
+[==========] Running 13 tests from 5 test suites.
+[----------] Global test environment set-up.
+[----------] 4 tests from StatsEngineTest
+[ RUN      ] StatsEngineTest.InitializationTest
+[       OK ] StatsEngineTest.InitializationTest (0 ms)
+[ RUN      ] StatsEngineTest.NormalTrafficAnalysis
+/home/hungqt/res/tests/unit_tests.cpp:54: Failure
+Value of: result
+  Actual: true
+Expected: false
+[  FAILED  ] StatsEngineTest.NormalTrafficAnalysis (0 ms)
+[ RUN      ] StatsEngineTest.LowEntropyDetection
+[       OK ] StatsEngineTest.LowEntropyDetection (0 ms)
+[ RUN      ] StatsEngineTest.EWMACalculation
+[       OK ] StatsEngineTest.EWMACalculation (0 ms)
+[----------] 4 tests from StatsEngineTest (0 ms total)
+
+[----------] 3 tests from BehaviorTrackerTest
+[ RUN      ] BehaviorTrackerTest.SYNFloodDetection
+[       OK ] BehaviorTrackerTest.SYNFloodDetection (0 ms)
+[ RUN      ] BehaviorTrackerTest.NormalTCPHandshake
+[       OK ] BehaviorTrackerTest.NormalTCPHandshake (0 ms)
+[ RUN      ] BehaviorTrackerTest.HTTPFloodDetection
+[       OK ] BehaviorTrackerTest.HTTPFloodDetection (0 ms)
+[----------] 3 tests from BehaviorTrackerTest (0 ms total)
+
+[----------] 3 tests from FirewallActionTest
+[ RUN      ] FirewallActionTest.BlockIPFunctionality
+[       OK ] FirewallActionTest.BlockIPFunctionality (0 ms)
+[ RUN      ] FirewallActionTest.UnblockIPFunctionality
+[       OK ] FirewallActionTest.UnblockIPFunctionality (0 ms)
+[ RUN      ] FirewallActionTest.MultipleIPBlocking
+[       OK ] FirewallActionTest.MultipleIPBlocking (0 ms)
+[----------] 3 tests from FirewallActionTest (0 ms total)
+
+[----------] 2 tests from PacketDataTest
+[ RUN      ] PacketDataTest.StructInitialization
+[       OK ] PacketDataTest.StructInitialization (0 ms)
+[ RUN      ] PacketDataTest.DataAssignment
+[       OK ] PacketDataTest.DataAssignment (0 ms)
+[----------] 2 tests from PacketDataTest (0 ms total)
+
+[----------] 1 test from IntegrationTest
+[ RUN      ] IntegrationTest.DDoSDetectionFlow
+[       OK ] IntegrationTest.DDoSDetectionFlow (0 ms)
+[----------] 1 test from IntegrationTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 13 tests from 5 test suites ran. (0 ms total)
+[  PASSED  ] 12 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] StatsEngineTest.NormalTrafficAnalysis
+
+ 1 FAILED TEST
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Failed.
+"AllTests" end time: May 28 20:08 +07
+"AllTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: May 28 20:08 +07

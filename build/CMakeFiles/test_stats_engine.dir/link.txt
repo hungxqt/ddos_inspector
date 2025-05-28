@@ -1,0 +1,1 @@
+/usr/bin/g++ -g CMakeFiles/test_stats_engine.dir/tests/test_stats_engine.cpp.o CMakeFiles/test_stats_engine.dir/src/stats_engine.cpp.o -o test_stats_engine  lib/libgtest.a lib/libgtest_main.a -lpthread lib/libgtest.a
