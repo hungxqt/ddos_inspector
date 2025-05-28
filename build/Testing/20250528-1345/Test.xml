@@ -25,12 +25,17 @@
 	>
 	<Testing>
 <<<<<<< HEAD
+<<<<<<< HEAD
 		<StartDateTime>May 28 21:14 +07</StartDateTime>
 		<StartTestTime>1748441658</StartTestTime>
 =======
 		<StartDateTime>May 28 21:12 +07</StartDateTime>
 		<StartTestTime>1748441521</StartTestTime>
 >>>>>>> 75e07a1 (update3)
+=======
+		<StartDateTime>May 28 21:14 +07</StartDateTime>
+		<StartTestTime>1748441658</StartTestTime>
+>>>>>>> 8e72d0d (update3)
 		<TestList>
 			<Test>./FirewallActionTests</Test>
 		</TestList>
@@ -42,10 +47,14 @@
 			<Results>
 				<NamedMeasurement type="numeric/double" name="Execution Time">
 <<<<<<< HEAD
+<<<<<<< HEAD
 					<Value>24.0419</Value>
 =======
 					<Value>24.0377</Value>
 >>>>>>> 75e07a1 (update3)
+=======
+					<Value>24.0419</Value>
+>>>>>>> 8e72d0d (update3)
 				</NamedMeasurement>
 				<NamedMeasurement type="numeric/double" name="Processors">
 					<Value>1</Value>
@@ -65,12 +74,17 @@
 			</Results>
 		</Test>
 <<<<<<< HEAD
+<<<<<<< HEAD
 		<EndDateTime>May 28 21:14 +07</EndDateTime>
 		<EndTestTime>1748441682</EndTestTime>
 =======
 		<EndDateTime>May 28 21:12 +07</EndDateTime>
 		<EndTestTime>1748441545</EndTestTime>
 >>>>>>> 75e07a1 (update3)
+=======
+		<EndDateTime>May 28 21:14 +07</EndDateTime>
+		<EndTestTime>1748441682</EndTestTime>
+>>>>>>> 8e72d0d (update3)
 		<ElapsedMinutes>0</ElapsedMinutes>
 	</Testing>
 </Site>
