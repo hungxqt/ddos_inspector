@@ -11,6 +11,8 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <fstream>
+#include <chrono>
 
 using namespace snort;
 
@@ -31,6 +33,9 @@ static const Parameter ddos_params[] =
 
     { "block_timeout", Parameter::PT_INT, "1:3600", "600",
       "IP block timeout in seconds" },
+
+    { "metrics_file", Parameter::PT_STRING, nullptr, "/tmp/ddos_inspector_stats",
+      "path to metrics output file" },
 
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
@@ -57,6 +62,8 @@ bool DdosInspectorModule::set(const char* fqn, Value& v, SnortConfig*)
         ewma_alpha = v.get_real();
     else if (v.is("block_timeout"))
         block_timeout = v.get_uint32();
+    else if (v.is("metrics_file"))
+        metrics_file = v.get_string();
     else
         return false;
 
@@ -80,14 +87,66 @@ bool DdosInspectorModule::end(const char*, int, SnortConfig*)
 DdosInspector::DdosInspector(DdosInspectorModule* mod)
 {
     allow_icmp = mod->allow_icmp;
+    metrics_file_path = mod->metrics_file;
     
     // Initialize components with configuration
     stats_engine = std::make_unique<StatsEngine>(mod->entropy_threshold, mod->ewma_alpha);
     behavior_tracker = std::make_unique<BehaviorTracker>();
     firewall_action = std::make_unique<FirewallAction>(mod->block_timeout);
+    
+    // Initialize metrics tracking
+    last_metrics_update = std::chrono::steady_clock::now();
+    syn_flood_detections = 0;
+    slowloris_detections = 0;
+    udp_flood_detections = 0;
+    icmp_flood_detections = 0;
 }
 
 DdosInspector::~DdosInspector() = default;
+
+void DdosInspector::writeMetrics()
+{
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_metrics_update);
+    
+    // Update metrics every 5 seconds
+    if (duration.count() >= 5) {
+        std::ofstream metrics_file(metrics_file_path);
+        if (metrics_file.is_open()) {
+            // Write current statistics
+            metrics_file << "packets_processed:" << packets_processed.load() << std::endl;
+            metrics_file << "packets_blocked:" << packets_blocked.load() << std::endl;
+            
+            if (stats_engine) {
+                metrics_file << "entropy:" << stats_engine->get_entropy() << std::endl;
+                metrics_file << "rate:" << stats_engine->get_current_rate() << std::endl;
+            }
+            
+            if (behavior_tracker) {
+                metrics_file << "connections:" << behavior_tracker->get_connection_count() << std::endl;
+            }
+            
+            if (firewall_action) {
+                metrics_file << "blocked_ips:" << firewall_action->get_blocked_count() << std::endl;
+            }
+            
+            // Attack type counters
+            metrics_file << "syn_floods:" << syn_flood_detections.load() << std::endl;
+            metrics_file << "slowloris_attacks:" << slowloris_detections.load() << std::endl;
+            metrics_file << "udp_floods:" << udp_flood_detections.load() << std::endl;
+            metrics_file << "icmp_floods:" << icmp_flood_detections.load() << std::endl;
+            
+            // Detection timing (in milliseconds)
+            auto detection_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - detection_start_time).count();
+            metrics_file << "detection_time:" << detection_time << std::endl;
+            
+            metrics_file.close();
+        }
+        
+        last_metrics_update = now;
+    }
+}
 
 void DdosInspector::eval(Packet* p)
 {
@@ -108,6 +167,7 @@ void DdosInspector::eval(Packet* p)
         return;
 
     packets_processed++;
+    detection_start_time = std::chrono::steady_clock::now();
 
     // Extract packet information
     PacketData pkt_data;
@@ -150,12 +210,24 @@ void DdosInspector::eval(Packet* p)
     bool stats_anomaly = stats_engine->analyze(pkt_data);
     bool behavior_anomaly = behavior_tracker->inspect(pkt_data);
 
-    // Take action if anomaly detected
-    if (stats_anomaly || behavior_anomaly)
-    {
+    // Classify attack type and increment counters
+    if (stats_anomaly || behavior_anomaly) {
+        if (proto == IPPROTO_TCP && pkt_data.is_syn && !pkt_data.is_ack) {
+            syn_flood_detections++;
+        } else if (proto == IPPROTO_TCP && pkt_data.is_http) {
+            slowloris_detections++;
+        } else if (proto == IPPROTO_UDP) {
+            udp_flood_detections++;
+        } else if (proto == IPPROTO_ICMP) {
+            icmp_flood_detections++;
+        }
+        
         firewall_action->block(pkt_data.src_ip);
         packets_blocked++;
     }
+    
+    // Update metrics file periodically
+    writeMetrics();
 }
 
 void DdosInspector::show_stats(std::ostream& os)
@@ -163,6 +235,10 @@ void DdosInspector::show_stats(std::ostream& os)
     os << "DDoS Inspector Statistics:\n";
     os << "  Packets processed: " << packets_processed.load() << "\n";
     os << "  Packets blocked: " << packets_blocked.load() << "\n";
+    os << "  SYN flood detections: " << syn_flood_detections.load() << "\n";
+    os << "  Slowloris detections: " << slowloris_detections.load() << "\n";
+    os << "  UDP flood detections: " << udp_flood_detections.load() << "\n";
+    os << "  ICMP flood detections: " << icmp_flood_detections.load() << "\n";
     if (stats_engine)
     {
         os << "  Current EWMA: " << stats_engine->get_current_rate() << "\n";

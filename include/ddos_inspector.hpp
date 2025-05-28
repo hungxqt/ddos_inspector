@@ -9,9 +9,10 @@
 #include <protocols/ip.h>
 #include <protocols/tcp.h>
 #include <protocols/udp.h>
-
 #include <atomic>
 #include <memory>
+#include <string>
+#include <chrono>
 
 // Forward declarations
 class StatsEngine;
@@ -24,20 +25,21 @@ public:
     DdosInspectorModule();
     ~DdosInspectorModule();
     
-    bool set(const char*, snort::Value&, snort::SnortConfig*);
-    bool begin(const char*, int, snort::SnortConfig*);
-    bool end(const char*, int, snort::SnortConfig*);
+    bool set(const char*, snort::Value&, snort::SnortConfig*) override;
+    bool begin(const char*, int, snort::SnortConfig*) override;
+    bool end(const char*, int, snort::SnortConfig*) override;
     
     const snort::Parameter* get_parameters() const;
     
-    Usage get_usage() const
+    Usage get_usage() const override
     { return INSPECT; }
 
     // Configuration parameters
     bool allow_icmp = false;
     double entropy_threshold = 2.0;
     double ewma_alpha = 0.1;
-    int block_timeout = 600; // seconds
+    uint32_t block_timeout = 600; // seconds
+    std::string metrics_file = "/tmp/ddos_inspector_stats";
 };
 
 class DdosInspector : public snort::Inspector
@@ -46,17 +48,31 @@ public:
     DdosInspector(DdosInspectorModule*);
     ~DdosInspector();
 
-    void eval(snort::Packet*);
+    void eval(snort::Packet*) override;
     void show_stats(std::ostream&);
 
 private:
+    bool allow_icmp;
+    std::string metrics_file_path;
+    
+    // Core components
     std::unique_ptr<StatsEngine> stats_engine;
     std::unique_ptr<BehaviorTracker> behavior_tracker;
     std::unique_ptr<FirewallAction> firewall_action;
     
-    bool allow_icmp;
+    // Statistics tracking
     std::atomic<uint64_t> packets_processed{0};
     std::atomic<uint64_t> packets_blocked{0};
+    std::atomic<uint64_t> syn_flood_detections{0};
+    std::atomic<uint64_t> slowloris_detections{0};
+    std::atomic<uint64_t> udp_flood_detections{0};
+    std::atomic<uint64_t> icmp_flood_detections{0};
+    
+    // Metrics tracking
+    std::chrono::steady_clock::time_point last_metrics_update;
+    std::chrono::steady_clock::time_point detection_start_time;
+    
+    void writeMetrics();
 };
 
 #endif // DDOS_INSPECTOR_HPP

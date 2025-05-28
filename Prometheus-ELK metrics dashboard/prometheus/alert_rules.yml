@@ -1,0 +1,116 @@
+groups:
+- name: ddos_inspector_alerts
+  rules:
+  - alert: HighDDoSAttackRate
+    expr: rate(ddos_inspector_syn_floods_total[5m]) > 0.5
+    for: 30s
+    labels:
+      severity: critical
+      component: ddos_inspector
+    annotations:
+      summary: "High SYN flood attack rate detected"
+      description: "SYN flood attacks detected at {{ $value }} attacks per second for more than 30 seconds"
+
+  - alert: SlowlorisAttackDetected
+    expr: increase(ddos_inspector_slowloris_attacks_total[1m]) > 0
+    for: 0s
+    labels:
+      severity: warning
+      component: ddos_inspector
+    annotations:
+      summary: "Slowloris attack detected"
+      description: "Slowloris attack pattern detected by DDoS Inspector"
+
+  - alert: HighPacketDropRate
+    expr: rate(ddos_inspector_packets_blocked_total[5m]) / rate(ddos_inspector_packets_processed_total[5m]) > 0.1
+    for: 2m
+    labels:
+      severity: warning
+      component: ddos_inspector
+    annotations:
+      summary: "High packet drop rate"
+      description: "{{ $value | humanizePercentage }} of packets are being blocked"
+
+  - alert: LowEntropy
+    expr: ddos_inspector_entropy < 1.5
+    for: 1m
+    labels:
+      severity: warning
+      component: ddos_inspector
+    annotations:
+      summary: "Low traffic entropy detected"
+      description: "Traffic entropy is {{ $value }}, which may indicate an ongoing attack"
+
+  - alert: HighDetectionLatency
+    expr: ddos_inspector_detection_time_ms > 50
+    for: 2m
+    labels:
+      severity: warning
+      component: ddos_inspector
+    annotations:
+      summary: "High detection latency"
+      description: "DDoS detection is taking {{ $value }}ms, which is above the 50ms threshold"
+
+- name: snort_performance_alerts
+  rules:
+  - alert: SnortHighCPUUsage
+    expr: snort_cpu_usage_percent > 80
+    for: 5m
+    labels:
+      severity: warning
+      component: snort
+    annotations:
+      summary: "Snort high CPU usage"
+      description: "Snort CPU usage is {{ $value }}% for more than 5 minutes"
+
+  - alert: SnortHighMemoryUsage
+    expr: snort_memory_usage_bytes > 2147483648  # 2GB
+    for: 5m
+    labels:
+      severity: warning
+      component: snort
+    annotations:
+      summary: "Snort high memory usage"
+      description: "Snort memory usage is {{ $value | humanizeBytes }} for more than 5 minutes"
+
+  - alert: SnortPacketDrop
+    expr: rate(snort_interface_packets_dropped_total[5m]) > 100
+    for: 1m
+    labels:
+      severity: critical
+      component: snort
+    annotations:
+      summary: "High packet drop rate in Snort"
+      description: "Snort is dropping {{ $value }} packets per second"
+
+- name: system_alerts
+  rules:
+  - alert: TooManyBlockedIPs
+    expr: ddos_inspector_blocked_ips > 1000
+    for: 1m
+    labels:
+      severity: warning
+      component: firewall
+    annotations:
+      summary: "Large number of blocked IPs"
+      description: "{{ $value }} IP addresses are currently blocked by the firewall"
+
+  - alert: HighConnectionCount
+    expr: ddos_inspector_active_connections > 10000
+    for: 2m
+    labels:
+      severity: warning
+      component: connection_tracker
+    annotations:
+      summary: "High number of active connections"
+      description: "{{ $value }} active connections are being tracked"
+
+  - alert: MetricsExporterDown
+    expr: up{job="ddos-inspector"} == 0
+    for: 30s
+    labels:
+      severity: critical
+      component: monitoring
+    annotations:
+      summary: "DDoS Inspector metrics exporter is down"
+      description: "The DDoS Inspector metrics exporter has been down for more than 30 seconds"

@@ -1,0 +1,19 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install required Python packages
+RUN pip install prometheus_client
+
+# Copy the exporter script
+COPY snort_stats_exporter.py /app/
+
+# Create a non-root user
+RUN useradd -r -u 1000 exporter
+USER exporter
+
+# Expose the metrics port
+EXPOSE 9092
+
+# Run the exporter
+CMD ["python", "snort_stats_exporter.py"]

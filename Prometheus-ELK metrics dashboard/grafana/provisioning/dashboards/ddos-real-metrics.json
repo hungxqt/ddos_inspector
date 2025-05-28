@@ -1,0 +1,207 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "DDoS Inspector Real-Time Monitoring",
+    "tags": ["ddos", "security", "snort"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Attack Detection Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(ddos_inspector_syn_floods_total[1h])",
+            "legendFormat": "SYN Floods"
+          },
+          {
+            "expr": "increase(ddos_inspector_slowloris_attacks_total[1h])",
+            "legendFormat": "Slowloris"
+          },
+          {
+            "expr": "increase(ddos_inspector_udp_floods_total[1h])",
+            "legendFormat": "UDP Floods"
+          },
+          {
+            "expr": "increase(ddos_inspector_icmp_floods_total[1h])",
+            "legendFormat": "ICMP Floods"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "displayMode": "list",
+              "orientation": "horizontal"
+            },
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 20}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Current System Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ddos_inspector_active_connections",
+            "legendFormat": "Active Connections"
+          },
+          {
+            "expr": "ddos_inspector_blocked_ips",
+            "legendFormat": "Blocked IPs"
+          },
+          {
+            "expr": "ddos_inspector_packet_rate",
+            "legendFormat": "Packet Rate/s"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Packet Processing Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ddos_inspector_packets_processed_total[5m])",
+            "legendFormat": "Packets Processed/sec"
+          },
+          {
+            "expr": "rate(ddos_inspector_packets_blocked_total[5m])",
+            "legendFormat": "Packets Blocked/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+        "yAxes": [
+          {"label": "Packets/sec", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Attack Types Over Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ddos_inspector_syn_floods_total[5m])",
+            "legendFormat": "SYN Floods"
+          },
+          {
+            "expr": "rate(ddos_inspector_slowloris_attacks_total[5m])",
+            "legendFormat": "Slowloris Attacks"
+          },
+          {
+            "expr": "rate(ddos_inspector_udp_floods_total[5m])",
+            "legendFormat": "UDP Floods"
+          },
+          {
+            "expr": "rate(ddos_inspector_icmp_floods_total[5m])",
+            "legendFormat": "ICMP Floods"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 5,
+        "title": "Statistical Analysis",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "ddos_inspector_entropy",
+            "legendFormat": "Entropy"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "yAxes": [
+          {"label": "Entropy Value", "show": true, "min": 0, "max": 4},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Detection Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "ddos_inspector_detection_time_ms",
+            "legendFormat": "Detection Time (ms)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "yAxes": [
+          {"label": "Milliseconds", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Snort Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "snort_cpu_usage_percent",
+            "legendFormat": "CPU Usage %"
+          },
+          {
+            "expr": "snort_memory_usage_bytes / 1024 / 1024",
+            "legendFormat": "Memory Usage (MB)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "Network Traffic Analysis",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(snort_interface_packets_received_total[5m])",
+            "legendFormat": "Packets Received/sec"
+          },
+          {
+            "expr": "snort_packet_processing_rate",
+            "legendFormat": "Processing Rate"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+      },
+      {
+        "id": 9,
+        "title": "Alert Generation Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(snort_alerts_generated_total[5m])",
+            "legendFormat": "Alerts/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40}
+      },
+      {
+        "id": 10,
+        "title": "Log File Sizes",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "snort_log_file_size_bytes",
+            "legendFormat": "{{file_type}} Size (bytes)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"},
+    "refresh": "5s",
+    "schemaVersion": 27,
+    "version": 1
+  }
+}

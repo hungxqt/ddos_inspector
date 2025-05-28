@@ -6,12 +6,16 @@
 #include <chrono>
 #include <deque>
 #include <unordered_set>
+#include <atomic>
 #include "packet_data.hpp"
 
 class BehaviorTracker {
 public:
     bool inspect(const PacketData& pkt);
-
+    
+    // Metrics methods
+    size_t get_connection_count() const;
+    
 private:
     struct TimestampedEvent {
         std::chrono::steady_clock::time_point timestamp;
@@ -39,6 +43,7 @@ private:
     };
     
     std::unordered_map<std::string, Behavior> behaviors;
+    mutable std::atomic<size_t> active_connections{0};
     
     // Global tracking for distributed attacks
     int total_global_packets = 0;
@@ -53,6 +58,7 @@ private:
     bool detectVolumeAttack(const Behavior& b);
     bool detectDistributedAttack();
     std::string generateConnectionId(const PacketData& pkt);
+    void updateConnectionCount() const;
 };
 
 #endif // BEHAVIOR_TRACKER_H

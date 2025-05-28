@@ -208,3 +208,16 @@ std::string BehaviorTracker::generateConnectionId(const PacketData& pkt) {
     // Use available fields since src_port/dst_port don't exist in PacketData
     return pkt.src_ip + "->" + pkt.dst_ip + ":" + pkt.session_id;
 }
+
+size_t BehaviorTracker::get_connection_count() const {
+    updateConnectionCount();
+    return active_connections.load();
+}
+
+void BehaviorTracker::updateConnectionCount() const {
+    size_t total_connections = 0;
+    for (const auto& pair : behaviors) {
+        total_connections += pair.second.established_connections.size();
+    }
+    active_connections.store(total_connections);
+}

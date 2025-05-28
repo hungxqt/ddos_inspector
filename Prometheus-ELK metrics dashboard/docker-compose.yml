@@ -1,65 +1,145 @@
-version: '3.7'
+version: '3.8'
+
 services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  # Elasticsearch for log storage
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=false
     ports:
-      - "9090:9090"
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
       - monitoring
 
+  # Logstash for log processing
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.8.0
+    container_name: logstash
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+      - ./logs:/var/log/ddos_inspector:ro
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    environment:
+      - "LS_JAVA_OPTS=-Xmx512m -Xms512m"
+    depends_on:
+      - elasticsearch
+    networks:
+      - monitoring
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    networks:
+      - monitoring
+
+  # Grafana for visualization
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
       - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
     networks:
       - monitoring
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
-    container_name: elasticsearch
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+  # DDoS Inspector Metrics Exporter
+  ddos-metrics-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile.metrics
+    container_name: ddos-metrics-exporter
     ports:
-      - "9200:9200"
-    volumes:
-      - esdata:/usr/share/elasticsearch/data
-    networks:
-      - logging
-
-  logstash:
-    image: docker.elastic.co/logstash/logstash:8.13.0
-    container_name: logstash
-    volumes:
-      - ./logstash/pipeline:/usr/share/logstash/pipeline
-      - ./logs:/var/log/snort
-    depends_on:
-      - elasticsearch
-    networks:
-      - logging
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.13.0
-    container_name: kibana
+      - "9091:9091"
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    ports:
-      - "5601:5601"
-    depends_on:
-      - elasticsearch
+      - DDOS_STATS_FILE=/shared/ddos_inspector_stats
+      - BIND_ADDRESS=0.0.0.0:9091
+    volumes:
+      - ./logs:/shared:ro
     networks:
-      - logging
+      - monitoring
+
+  # Snort Stats Exporter (Python-based)
+  snort-stats-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile.snort-stats
+    container_name: snort-stats-exporter
+    ports:
+      - "9092:9092"
+    environment:
+      - SNORT_STATS_FILE=/shared/snort_stats.log
+      - BIND_ADDRESS=0.0.0.0:9092
+    volumes:
+      - ./logs:/shared:ro
+    networks:
+      - monitoring
+
+  # Node Exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - monitoring
+
+  # AlertManager for handling alerts
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    networks:
+      - monitoring
 
 volumes:
-  esdata:
+  elasticsearch_data:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
 
 networks:
-  logging:
   monitoring:
+    driver: bridge

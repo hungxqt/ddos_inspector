@@ -1,99 +1,271 @@
-// ddos_inspector_real_metrics.cpp
-// Real entropy + packet rate Prometheus exporter (simulated IPs)
-
-#include <prometheus/exposer.h>
-#include <prometheus/registry.h>
-#include <prometheus/gauge.h>
-
+#include <cmath>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <map>
 #include <thread>
 #include <chrono>
-#include <map>
-#include <random>
-#include <string>
-#include <cmath>
-#include <mutex>
+#include <prometheus/exposer.h>
+#include <prometheus/registry.h>
+#include <prometheus/counter.h>
+#include <prometheus/gauge.h>
+#include <prometheus/histogram.h>
 
-using namespace prometheus;
-
-std::mutex data_mutex;
-std::map<std::string, int> ip_freq;
-int packet_counter = 0;
-
-// Simulate IPs for testing
-std::string random_ip(std::default_random_engine& gen) {
-    std::uniform_int_distribution<int> dist(1, 254);
-    return std::to_string(dist(gen)) + "." + std::to_string(dist(gen)) + "." +
-           std::to_string(dist(gen)) + "." + std::to_string(dist(gen));
-}
-
-// Entropy Calculation
-double calculate_entropy(const std::map<std::string, int>& counts) {
-    int total = 0;
-    for (auto& pair : counts) total += pair.second;
-
-    double entropy = 0.0;
-    for (auto& pair : counts) {
-        double p = (double)pair.second / total;
-        if (p > 0) entropy -= p * std::log2(p);
+class DDoSInspectorMetricsExporter {
+private:
+    std::shared_ptr<prometheus::Registry> registry;
+    prometheus::Exposer exposer;
+    
+    // Metrics
+    prometheus::Family<prometheus::Counter>& packets_processed_family;
+    prometheus::Family<prometheus::Counter>& packets_blocked_family;
+    prometheus::Family<prometheus::Counter>& syn_floods_family;
+    prometheus::Family<prometheus::Counter>& slowloris_attacks_family;
+    prometheus::Family<prometheus::Counter>& udp_floods_family;
+    prometheus::Family<prometheus::Counter>& icmp_floods_family;
+    
+    prometheus::Family<prometheus::Gauge>& entropy_family;
+    prometheus::Family<prometheus::Gauge>& rate_family;
+    prometheus::Family<prometheus::Gauge>& connections_family;
+    prometheus::Family<prometheus::Gauge>& blocked_ips_family;
+    prometheus::Family<prometheus::Gauge>& detection_time_family;
+    
+    // Metric instances
+    prometheus::Counter& packets_processed;
+    prometheus::Counter& packets_blocked;
+    prometheus::Counter& syn_floods;
+    prometheus::Counter& slowloris_attacks;
+    prometheus::Counter& udp_floods;
+    prometheus::Counter& icmp_floods;
+    
+    prometheus::Gauge& entropy;
+    prometheus::Gauge& rate;
+    prometheus::Gauge& connections;
+    prometheus::Gauge& blocked_ips;
+    prometheus::Gauge& detection_time;
+    
+    std::string stats_file_path;
+    std::map<std::string, double> previous_values;
+    
+public:
+    DDoSInspectorMetricsExporter(const std::string& bind_address = "0.0.0.0:9091", 
+                                const std::string& stats_file = "/tmp/ddos_inspector_stats")
+        : exposer{bind_address}
+        , registry{std::make_shared<prometheus::Registry>()}
+        , packets_processed_family{prometheus::BuildCounter()
+                                 .Name("ddos_inspector_packets_processed_total")
+                                 .Help("Total number of packets processed by DDoS Inspector")
+                                 .Register(*registry)}
+        , packets_blocked_family{prometheus::BuildCounter()
+                               .Name("ddos_inspector_packets_blocked_total")
+                               .Help("Total number of packets blocked by DDoS Inspector")
+                               .Register(*registry)}
+        , syn_floods_family{prometheus::BuildCounter()
+                          .Name("ddos_inspector_syn_floods_total")
+                          .Help("Total number of SYN flood attacks detected")
+                          .Register(*registry)}
+        , slowloris_attacks_family{prometheus::BuildCounter()
+                                 .Name("ddos_inspector_slowloris_attacks_total")
+                                 .Help("Total number of Slowloris attacks detected")
+                                 .Register(*registry)}
+        , udp_floods_family{prometheus::BuildCounter()
+                          .Name("ddos_inspector_udp_floods_total")
+                          .Help("Total number of UDP flood attacks detected")
+                          .Register(*registry)}
+        , icmp_floods_family{prometheus::BuildCounter()
+                           .Name("ddos_inspector_icmp_floods_total")
+                           .Help("Total number of ICMP flood attacks detected")
+                           .Register(*registry)}
+        , entropy_family{prometheus::BuildGauge()
+                       .Name("ddos_inspector_entropy")
+                       .Help("Current entropy value from statistical analysis")
+                       .Register(*registry)}
+        , rate_family{prometheus::BuildGauge()
+                    .Name("ddos_inspector_packet_rate")
+                    .Help("Current packet rate (packets per second)")
+                    .Register(*registry)}
+        , connections_family{prometheus::BuildGauge()
+                           .Name("ddos_inspector_active_connections")
+                           .Help("Number of active connections being tracked")
+                           .Register(*registry)}
+        , blocked_ips_family{prometheus::BuildGauge()
+                           .Name("ddos_inspector_blocked_ips")
+                           .Help("Number of currently blocked IP addresses")
+                           .Register(*registry)}
+        , detection_time_family{prometheus::BuildGauge()
+                              .Name("ddos_inspector_detection_time_ms")
+                              .Help("Time taken for latest detection in milliseconds")
+                              .Register(*registry)}
+        , packets_processed{packets_processed_family.Add({})}
+        , packets_blocked{packets_blocked_family.Add({})}
+        , syn_floods{syn_floods_family.Add({})}
+        , slowloris_attacks{slowloris_attacks_family.Add({})}
+        , udp_floods{udp_floods_family.Add({})}
+        , icmp_floods{icmp_floods_family.Add({})}
+        , entropy{entropy_family.Add({})}
+        , rate{rate_family.Add({})}
+        , connections{connections_family.Add({})}
+        , blocked_ips{blocked_ips_family.Add({})}
+        , detection_time{detection_time_family.Add({})}
+        , stats_file_path{stats_file}
+    {
+        exposer.RegisterCollectable(registry);
+        std::cout << "DDoS Inspector Metrics Exporter started on " << bind_address << std::endl;
+        std::cout << "Reading stats from: " << stats_file_path << std::endl;
     }
-    return entropy;
-}
-
-int main() {
-    Exposer exposer{"0.0.0.0:9091"};
-    auto registry = std::make_shared<Registry>();
-    exposer.RegisterCollectable(registry);
-
-    auto& entropy_family = BuildGauge()
-        .Name("ddos_entropy_score")
-        .Help("Entropy score of destination IPs")
-        .Register(*registry);
-    auto& entropy_gauge = entropy_family.Add({});
-
-    auto& packet_family = BuildGauge()
-        .Name("ddos_packet_rate")
-        .Help("Incoming packet rate per second")
-        .Register(*registry);
-    auto& packet_gauge = packet_family.Add({});
-
-    std::default_random_engine generator;
-    std::uniform_int_distribution<int> pps_dist(100, 500); // packets per second
-
-    // Simulate packet processing thread
-    std::thread packet_thread([&]() {
-        while (true) {
-            int n = pps_dist(generator);
-            {
-                std::lock_guard<std::mutex> lock(data_mutex);
-                for (int i = 0; i < n; ++i) {
-                    std::string ip = random_ip(generator);
-                    ip_freq[ip]++;
-                    packet_counter++;
+    
+    std::map<std::string, double> parseStatsFile() {
+        std::map<std::string, double> stats;
+        std::ifstream file(stats_file_path);
+        
+        if (!file.is_open()) {
+            std::cerr << "Warning: Could not open stats file: " << stats_file_path << std::endl;
+            return stats;
+        }
+        
+        std::string line;
+        while (std::getline(file, line)) {
+            size_t delimiter_pos = line.find(':');
+            if (delimiter_pos != std::string::npos) {
+                std::string key = line.substr(0, delimiter_pos);
+                std::string value_str = line.substr(delimiter_pos + 1);
+                
+                try {
+                    double value = std::stod(value_str);
+                    stats[key] = value;
+                } catch (const std::exception& e) {
+                    std::cerr << "Error parsing value for key '" << key << "': " << e.what() << std::endl;
                 }
             }
-            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-    });
-
-    // Metrics exporter loop (every 5s)
-    while (true) {
-        double entropy = 0.0;
-        double rate = 0.0;
-
-        {
-            std::lock_guard<std::mutex> lock(data_mutex);
-            entropy = calculate_entropy(ip_freq);
-            rate = packet_counter / 5.0;
-            ip_freq.clear();
-            packet_counter = 0;
-        }
-
-        entropy_gauge.Set(entropy);
-        packet_gauge.Set(rate);
-
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        
+        file.close();
+        return stats;
     }
+    
+    void updateMetrics() {
+        auto stats = parseStatsFile();
+        
+        if (stats.empty()) {
+            // If no stats file, generate some simulated data for testing
+            generateSimulatedData(stats);
+        }
+        
+        // Update counters (they should only increase)
+        updateCounter("packets_processed", stats, packets_processed);
+        updateCounter("packets_blocked", stats, packets_blocked);
+        updateCounter("syn_floods", stats, syn_floods);
+        updateCounter("slowloris_attacks", stats, slowloris_attacks);
+        updateCounter("udp_floods", stats, udp_floods);
+        updateCounter("icmp_floods", stats, icmp_floods);
+        
+        // Update gauges (they can go up or down)
+        if (stats.find("entropy") != stats.end()) {
+            entropy.Set(stats["entropy"]);
+        }
+        
+        if (stats.find("rate") != stats.end()) {
+            rate.Set(stats["rate"]);
+        }
+        
+        if (stats.find("connections") != stats.end()) {
+            connections.Set(stats["connections"]);
+        }
+        
+        if (stats.find("blocked_ips") != stats.end()) {
+            blocked_ips.Set(stats["blocked_ips"]);
+        }
+        
+        if (stats.find("detection_time") != stats.end()) {
+            detection_time.Set(stats["detection_time"]);
+        }
+        
+        // Log current metrics
+        std::cout << "Updated metrics - Packets processed: " << stats["packets_processed"] 
+                  << ", Blocked: " << stats["packets_blocked"]
+                  << ", SYN floods: " << stats["syn_floods"]
+                  << ", Entropy: " << stats["entropy"] << std::endl;
+    }
+    
+private:
+    void updateCounter(const std::string& key, const std::map<std::string, double>& stats, 
+                      prometheus::Counter& counter) {
+        auto it = stats.find(key);
+        if (it != stats.end()) {
+            double current_value = it->second;
+            double previous_value = previous_values[key];
+            
+            if (current_value >= previous_value) {
+                // Counter should only increase
+                double increment = current_value - previous_value;
+                if (increment > 0) {
+                    counter.Increment(increment);
+                }
+            } else {
+                // If current value is less than previous, assume counter was reset
+                counter.Increment(current_value);
+            }
+            
+            previous_values[key] = current_value;
+        }
+    }
+    
+    void generateSimulatedData(std::map<std::string, double>& stats) {
+        // Generate simulated data when real stats are not available
+        static auto start_time = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
+        
+        // Simulate realistic DDoS detection metrics
+        stats["packets_processed"] = elapsed * 1000 + (rand() % 500);
+        stats["packets_blocked"] = elapsed * 10 + (rand() % 50);
+        stats["syn_floods"] = elapsed / 30.0 + (rand() % 3);
+        stats["slowloris_attacks"] = elapsed / 60.0 + (rand() % 2);
+        stats["udp_floods"] = elapsed / 45.0 + (rand() % 2);
+        stats["icmp_floods"] = elapsed / 90.0 + (rand() % 1);
+        
+        // Simulate varying entropy and rates
+        stats["entropy"] = 2.0 + sin(elapsed * 0.1) * 0.5 + (rand() % 100) / 1000.0;
+        stats["rate"] = 1000 + sin(elapsed * 0.05) * 200 + (rand() % 200);
+        stats["connections"] = 50 + sin(elapsed * 0.02) * 20 + (rand() % 30);
+        stats["blocked_ips"] = elapsed / 20.0 + (rand() % 10);
+        stats["detection_time"] = 5 + (rand() % 15); // 5-20ms detection time
+        
+        std::cout << "Using simulated data (stats file not available)" << std::endl;
+    }
+    
+public:
+    void run() {
+        std::cout << "Starting DDoS Inspector metrics collection..." << std::endl;
+        
+        while (true) {
+            try {
+                updateMetrics();
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+            } catch (const std::exception& e) {
+                std::cerr << "Error updating metrics: " << e.what() << std::endl;
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+            }
+        }
+    }
+};
 
-    packet_thread.join();
+int main() {
+    try {
+        // Default stats file path, can be overridden by environment variable
+        const char* stats_file_env = std::getenv("DDOS_STATS_FILE");
+        std::string stats_file = stats_file_env ? stats_file_env : "/tmp/ddos_inspector_stats";
+        
+        const char* bind_address_env = std::getenv("BIND_ADDRESS");
+        std::string bind_address = bind_address_env ? bind_address_env : "0.0.0.0:9091";
+        
+        DDoSInspectorMetricsExporter exporter(bind_address, stats_file);
+        exporter.run();
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        return 1;
+    }
+    
     return 0;
 }

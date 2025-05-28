@@ -1,4 +1,3 @@
-
 # 🛡️ Full Observability System Setup and Testing Guide
 
 This guide helps you deploy, run, and test a full observability setup for `ddos_inspector`, integrating Prometheus, Grafana, ELK (Elasticsearch, Logstash, Kibana), and metric exporters.
@@ -226,6 +225,207 @@ Append to `logs/alert_fast.txt`:
 Verify:
 - Metrics update in Grafana
 - Logs appear in Kibana
+
+---
+
+# DDoS Inspector Real Metrics Dashboard
+
+This dashboard provides comprehensive monitoring for the DDoS Inspector Snort plugin using real metrics integration with Prometheus and ELK stack.
+
+## Architecture
+
+The monitoring stack consists of:
+
+### Metrics Collection (Prometheus Stack)
+- **DDoS Inspector Metrics Exporter** (Port 9091): Reads real metrics from the DDoS Inspector plugin
+- **Snort Statistics Exporter** (Port 9092): Monitors Snort process and log files
+- **Node Exporter** (Port 9100): System-level metrics
+- **Prometheus** (Port 9090): Metrics storage and querying
+- **Grafana** (Port 3000): Metrics visualization and dashboards
+
+### Log Analysis (ELK Stack)
+- **Elasticsearch** (Port 9200): Log storage and indexing
+- **Kibana** (Port 5601): Log visualization and analysis
+- **Logstash** (Port 5044): Log processing and parsing
+
+## Real Metrics Integration
+
+### DDoS Inspector Plugin Integration
+
+The dashboard reads real metrics from your DDoS Inspector plugin through:
+
+1. **Metrics File**: `/tmp/ddos_inspector_stats` - Written by the plugin
+2. **Log Files**: Snort alert and event logs
+3. **Process Monitoring**: Live Snort process statistics
+
+### Metrics Collected
+
+#### DDoS Inspector Metrics
+- `ddos_inspector_packets_processed_total`: Total packets processed
+- `ddos_inspector_packets_blocked_total`: Total packets blocked
+- `ddos_inspector_attack_detections_total{type="syn_flood"}`: SYN flood detections
+- `ddos_inspector_attack_detections_total{type="slowloris"}`: Slowloris detections
+- `ddos_inspector_attack_detections_total{type="udp_flood"}`: UDP flood detections
+- `ddos_inspector_attack_detections_total{type="icmp_flood"}`: ICMP flood detections
+- `ddos_inspector_current_stats{metric="entropy"}`: Current entropy value
+- `ddos_inspector_current_stats{metric="rate"}`: Current packet rate
+- `ddos_inspector_current_stats{metric="connections"}`: Active connections
+- `ddos_inspector_current_stats{metric="blocked_ips"}`: Blocked IP count
+- `ddos_inspector_detection_time_milliseconds`: Attack detection latency
+
+#### Snort Process Metrics
+- `snort_cpu_usage_percent`: Snort CPU usage
+- `snort_memory_usage_bytes`: Snort memory consumption
+- `snort_uptime_seconds`: Snort process uptime
+- `snort_packets_analyzed_total`: Total packets analyzed
+- `snort_alerts_generated_total`: Total alerts generated
+- `snort_packet_processing_rate`: Packets per second
+- `snort_active_rules_count`: Number of active rules
+
+## Quick Start
+
+### Prerequisites
+- Docker and Docker Compose installed
+- DDoS Inspector plugin compiled and ready
+- Snort3 with your plugin configured
+
+### 1. Deploy the Dashboard
+```bash
+cd "Prometheus-ELK metrics dashboard"
+./deploy.sh
+```
+
+### 2. Access the Dashboards
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Kibana**: http://localhost:5601
+- **Prometheus**: http://localhost:9090
+
+### 3. Configure Data Sources
+
+#### Grafana Configuration
+1. Go to Configuration → Data Sources
+2. Add Prometheus data source: `http://prometheus:9090`
+3. Import the pre-built dashboards (coming in next update)
+
+#### Kibana Configuration
+1. Go to Stack Management → Index Patterns
+2. Create index pattern: `snort-logs-*`
+3. Set timestamp field: `@timestamp`
+
+### 4. Start Your DDoS Inspector Plugin
+
+Ensure your plugin writes metrics to `/tmp/ddos_inspector_stats` in the format:
+```
+packets_processed:12345
+packets_blocked:67
+syn_floods:3
+slowloris_attacks:1
+udp_floods:2
+icmp_floods:0
+connections:45
+blocked_ips:12
+entropy:1.85
+rate:1024.5
+detection_time:15
+```
+
+## Real-Time Monitoring Features
+
+### Live Attack Detection
+- Real-time visualization of DDoS attacks as they're detected
+- Attack type breakdown and frequency analysis
+- Geographic mapping of attack sources (if IP geolocation is enabled)
+
+### Performance Monitoring
+- Plugin performance metrics and resource usage
+- Snort process health and statistics
+- System-level monitoring (CPU, memory, network)
+
+### Alerting
+- Configurable alerts for attack thresholds
+- Performance degradation warnings
+- System resource alerts
+
+## Advanced Configuration
+
+### Custom Metrics
+Add custom metrics to your DDoS Inspector plugin by writing to the metrics file:
+```cpp
+void write_custom_metric(const std::string& name, uint64_t value) {
+    std::ofstream file("/tmp/ddos_inspector_stats", std::ios::app);
+    file << name << ":" << value << std::endl;
+}
+```
+
+### Log Processing
+Customize Logstash configuration in `logstash/pipeline/snort.conf` to parse additional log formats.
+
+### Retention Policies
+- Prometheus: 200 hours of metrics retention
+- Elasticsearch: Configure in docker-compose.yml for longer retention
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Metrics not appearing**
+   - Check if `/tmp/ddos_inspector_stats` file exists and is readable
+   - Verify DDoS Inspector plugin is writing metrics
+   - Check metrics exporter logs: `docker-compose logs ddos-metrics`
+
+2. **Snort stats not showing**
+   - Ensure Snort is running and accessible
+   - Check Snort log file permissions
+   - Review snort-stats exporter logs: `docker-compose logs snort-stats`
+
+3. **Services not starting**
+   - Check system resources (especially memory for Elasticsearch)
+   - Verify port availability
+   - Review service logs: `docker-compose logs [service-name]`
+
+### Debugging Commands
+```bash
+# View all service logs
+docker-compose logs -f
+
+# Check specific service
+docker-compose logs -f ddos-metrics
+
+# Check metrics endpoints
+curl http://localhost:9091/metrics
+curl http://localhost:9092/metrics
+
+# Restart specific service
+docker-compose restart ddos-metrics
+```
+
+## Development
+
+### Building Custom Exporters
+The metrics exporters are built from source:
+- `ddos_inspector_real_metrics.cpp`: C++ exporter for DDoS Inspector metrics
+- `snort_stats_exporter.py`: Python exporter for Snort statistics
+
+### Extending Metrics
+1. Add new metrics to the appropriate exporter
+2. Rebuild the containers: `docker-compose build`
+3. Update Grafana dashboards to display new metrics
+
+## Production Deployment
+
+For production use:
+1. Configure proper authentication for all services
+2. Set up TLS/SSL encryption
+3. Configure backup and disaster recovery
+4. Implement log rotation and cleanup policies
+5. Set up monitoring for the monitoring stack itself
+
+## Support
+
+For issues related to:
+- DDoS Inspector plugin: Check the main project documentation
+- Metrics collection: Review exporter logs and metrics file format
+- Dashboard configuration: Consult Grafana and Kibana documentation
 
 
 
