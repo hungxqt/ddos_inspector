@@ -1,431 +1,462 @@
-# 🛡️ Full Observability System Setup and Testing Guide
+# 🛡️ DDoS Inspector Monitoring Dashboard
 
-This guide helps you deploy, run, and test a full observability setup for `ddos_inspector`, integrating Prometheus, Grafana, ELK (Elasticsearch, Logstash, Kibana), and metric exporters.
-
----
-
-## 📁 Directory Structure
-
-```
-Prometheus-ELK metrics dashboard/
-├── docker-compose.yml
-├── prometheus/
-│   └── prometheus.yml
-├── logstash/
-│   └── pipeline/
-│       └── logstash.conf
-├── logs/
-│   └── alert_fast.txt      # Snort or simulated alerts
-├── exporters/
-│   └── ddos_inspector_real_metrics.cpp
-│   └── snort_stats_exporter.py
-```
+A comprehensive real-time monitoring solution for the DDoS Inspector Snort plugin, featuring Prometheus metrics collection, Grafana visualization, and ELK stack log analysis.
 
 ---
 
-## 🛠️ Step 1: Docker Compose Setup
+## 🌟 **What You Get**
 
-Place this `docker-compose.yml` in your project root:
+- **📊 Real-time Attack Visualization**: Live DDoS attack detection and classification
+- **⚡ Performance Monitoring**: Plugin performance, Snort health, and system metrics
+- **📈 Historical Analysis**: Attack trends and pattern recognition
+- **🚨 Smart Alerting**: Configurable thresholds and notifications
+- **🔍 Log Forensics**: Detailed packet-level investigation capabilities
 
-```yaml
-version: '3.7'
-services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - monitoring
+---
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    depends_on:
-      - prometheus
-    networks:
-      - monitoring
+## 🏗️ **Architecture Overview**
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
-    container_name: elasticsearch
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
-    ports:
-      - "9200:9200"
-    volumes:
-      - esdata:/usr/share/elasticsearch/data
-    networks:
-      - logging
-
-  logstash:
-    image: docker.elastic.co/logstash/logstash:8.13.0
-    container_name: logstash
-    volumes:
-      - ./logstash/pipeline:/usr/share/logstash/pipeline
-      - ./logs:/var/log/snort
-    depends_on:
-      - elasticsearch
-    networks:
-      - logging
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.13.0
-    container_name: kibana
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    ports:
-      - "5601:5601"
-    depends_on:
-      - elasticsearch
-    networks:
-      - logging
-
-volumes:
-  esdata:
-
-networks:
-  logging:
-  monitoring:
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  DDoS Inspector │───▶│   Prometheus    │───▶│     Grafana     │
+│     Plugin      │    │   (Metrics)     │    │  (Dashboards)   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                                              │
+         ▼                                              │
+┌─────────────────┐    ┌─────────────────┐              │
+│   Snort Logs    │───▶│   ELK Stack     │              │
+│   (Alerts)      │    │ (Log Analysis)  │              │
+└─────────────────┘    └─────────────────┘              │
+                                │                       │
+                                ▼                       ▼
+                       ┌─────────────────────────────────────┐
+                       │        Web Interfaces               │
+                       │ • Grafana: :3000                    │
+                       │ • Kibana: :5601                     │
+                       │ • Prometheus: :9090                 │
+                       └─────────────────────────────────────┘
 ```
 
 ---
 
-## 📊 Step 2: Prometheus Configuration
+## 🚀 **Quick Start (5 Minutes)**
 
-Create `prometheus/prometheus.yml`:
+### **Prerequisites**
+```bash
+# Check if you have Docker
+docker --version
+docker-compose --version
 
+# If not installed:
+sudo apt update && sudo apt install docker.io docker-compose
+```
+
+### **1. Deploy the Complete Stack**
+```bash
+cd "Prometheus-ELK metrics dashboard"
+chmod +x deploy.sh
+./deploy.sh
+```
+
+### **2. Access Your Dashboards**
+- **🎛️ Grafana**: http://localhost:3000 (admin/admin)
+- **📄 Kibana**: http://localhost:5601
+- **📊 Prometheus**: http://localhost:9090
+
+### **3. Start Monitoring**
+```bash
+# Start metrics collection
+./start_monitoring.sh
+
+# Run your DDoS Inspector plugin
+sudo snort -c /etc/snort/snort_ddos_config.lua -i eth0
+```
+
+---
+
+## 📊 **Dashboard Components**
+
+### **🎯 Grafana Dashboards**
+
+#### **Main DDoS Dashboard**
+- **Attack Overview**: Real-time attack counts by type (SYN, UDP, HTTP, Slowloris)
+- **Traffic Analysis**: Packet rates, entropy scores, connection counts
+- **Performance Metrics**: Detection latency, CPU usage, memory consumption
+- **Firewall Status**: Active blocks, blocked IPs, auto-unblocks
+
+#### **System Health Dashboard**
+- **Snort Performance**: Processing rates, rule efficiency, resource usage
+- **Plugin Health**: Component status, error rates, throughput
+- **Network Overview**: Interface statistics, traffic patterns
+
+### **📋 Key Metrics Monitored**
+
+| Metric Category | Examples | Purpose |
+|----------------|----------|---------|
+| **Attack Detection** | `ddos_inspector_syn_floods_total` | Track attack frequency |
+| **Traffic Analysis** | `ddos_inspector_entropy`, `packet_rate` | Identify anomalies |
+| **Performance** | `detection_time_ms`, `cpu_usage_percent` | Monitor efficiency |
+| **Security Status** | `blocked_ips_count`, `active_connections` | Security posture |
+
+### **📈 Kibana Log Analysis**
+
+#### **Real-time Alert Stream**
+- Live DDoS attack alerts as they're detected
+- Source IP analysis and geographic mapping
+- Attack pattern timeline and correlation
+
+#### **Forensic Investigation**
+- Detailed packet inspection
+- Attack signature analysis
+- Historical attack patterns
+
+---
+
+## ⚙️ **Detailed Setup Guide**
+
+### **Step 1: Install Dependencies**
+```bash
+# System packages
+sudo apt update
+sudo apt install -y docker.io docker-compose git curl
+
+# Prometheus C++ library (for metrics exporter)
+git clone https://github.com/jupp0r/prometheus-cpp.git
+cd prometheus-cpp && mkdir _build && cd _build
+cmake .. -DBUILD_SHARED_LIBS=ON
+make -j$(nproc) && sudo make install
+cd ../..
+```
+
+### **Step 2: Configure the Stack**
+
+The dashboard comes pre-configured, but you can customize:
+
+#### **Prometheus Configuration** (`prometheus/prometheus.yml`)
 ```yaml
 global:
   scrape_interval: 5s
+  evaluation_interval: 5s
 
 scrape_configs:
   - job_name: 'ddos_inspector'
     static_configs:
       - targets: ['host.docker.internal:9091']
+    scrape_interval: 2s
 
   - job_name: 'snort_stats'
     static_configs:
       - targets: ['host.docker.internal:9092']
+    scrape_interval: 5s
+
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
 ```
 
----
-
-## 📄 Step 3: Logstash Parser
-
-Create `logstash/pipeline/logstash.conf`:
-
-```conf
-input {
-  file {
-    path => "/var/log/snort/alert_fast.txt"
-    start_position => "beginning"
-    sincedb_path => "/dev/null"
-  }
-}
-filter {
-  grok {
-    match => { "message" => "\[%{DATA:timestamp}\] \[%{DATA:signature}\] %{GREEDYDATA:alert_msg}" }
-  }
-}
-output {
-  elasticsearch {
-    hosts => ["http://elasticsearch:9200"]
-    index => "snort-logs"
-  }
-}
+#### **Docker Compose Services**
+```yaml
+# Services automatically configured:
+# - Prometheus (metrics storage)
+# - Grafana (visualization)
+# - Elasticsearch (log storage)
+# - Logstash (log processing)
+# - Kibana (log visualization)
 ```
 
----
+### **Step 3: Start Metrics Collection**
 
-## 🚀 Step 4: Run Observability Stack
-
+#### **Option A: Automated Start**
 ```bash
+./start_monitoring.sh
+```
+
+#### **Option B: Manual Start**
+```bash
+# Start the stack
 docker-compose up -d
+
+# Start DDoS Inspector metrics exporter
+g++ ddos_inspector_real_metrics.cpp -o exporter \
+    -lpthread -lprometheus-cpp-pull -lprometheus-cpp-core -lmicrohttpd
+./exporter &
+
+# Start Snort stats exporter
+python3 snort_stats_exporter.py &
 ```
 
----
+### **Step 4: Configure Data Sources**
 
-## ⚙️ Step 5: Start Exporters
-
-### 1. System Libraries
-Run this to install required packages:
-```bash
-sudo apt update
-sudo apt install -y g++ cmake libmicrohttpd-dev libcurl4-openssl-dev libssl-dev
-```
-
-### 2. prometheus-cpp Library
-Build and install the C++ Prometheus client library:
-```bash
-git clone https://github.com/jupp0r/prometheus-cpp.git
-cd prometheus-cpp
-mkdir _build && cd _build
-cmake .. -DBUILD_SHARED_LIBS=ON
-make -j$(nproc)
-sudo make install
-```
-
-### Option A. Metrics Exporter (C++)
-
-Compile:
-```bash
-g++ ddos_inspector_real_metrics.cpp -o exporter -lpthread -lprometheus-cpp-pull -lprometheus-cpp-core -lmicrohttpd
-```
-Run:
-```bash
-./exporter
-```
-
-### Option B. Snort Stats Exporter (Python)
-
-```bash
-python3 snort_stats_exporter.py
-```
-
----
-
-## 📈 Step 6: Grafana Dashboard
-
+#### **Grafana Setup**
 1. Open http://localhost:3000
-2. Add Prometheus data source: `http://prometheus:9090`
-3. Create dashboards with queries like:
-   - `ddos_entropy_score`
-   - `ddos_packet_rate`
-   - `snort_decoder_pkts`
+2. Login: admin/admin (change password when prompted)
+3. Go to **Configuration → Data Sources**
+4. Add Prometheus: `http://prometheus:9090`
+5. Import dashboard from `grafana/dashboards/`
 
----
-
-## 📄 Step 7: Kibana Log Dashboard
-
+#### **Kibana Setup**
 1. Open http://localhost:5601
-2. Create index pattern: `snort-logs`
-3. Go to Discover to inspect alerts.
-4. Build:
-   - Pie chart: `signature.keyword`
-   - Line: alert count over time
-   - Table: timestamp + alert_msg
+2. Go to **Stack Management → Index Patterns**
+3. Create pattern: `snort-logs-*`
+4. Set timestamp: `@timestamp`
 
 ---
 
-## 🧪 Step 8: Test Data
+## 🧪 **Testing & Validation**
 
-Append to `logs/alert_fast.txt`:
-```
-[**] [1:1000001:0] SYN Flood Detected [**] {TCP} 192.168.1.10:443 -> 10.0.0.2:80
-[**] [1:1000002:0] HTTP Flood Detected [**] {TCP} 192.168.1.12:443 -> 10.0.0.2:80
-```
-
-Verify:
-- Metrics update in Grafana
-- Logs appear in Kibana
-
----
-
-# DDoS Inspector Real Metrics Dashboard
-
-This dashboard provides comprehensive monitoring for the DDoS Inspector Snort plugin using real metrics integration with Prometheus and ELK stack.
-
-## Architecture
-
-The monitoring stack consists of:
-
-### Metrics Collection (Prometheus Stack)
-- **DDoS Inspector Metrics Exporter** (Port 9091): Reads real metrics from the DDoS Inspector plugin
-- **Snort Statistics Exporter** (Port 9092): Monitors Snort process and log files
-- **Node Exporter** (Port 9100): System-level metrics
-- **Prometheus** (Port 9090): Metrics storage and querying
-- **Grafana** (Port 3000): Metrics visualization and dashboards
-
-### Log Analysis (ELK Stack)
-- **Elasticsearch** (Port 9200): Log storage and indexing
-- **Kibana** (Port 5601): Log visualization and analysis
-- **Logstash** (Port 5044): Log processing and parsing
-
-## Real Metrics Integration
-
-### DDoS Inspector Plugin Integration
-
-The dashboard reads real metrics from your DDoS Inspector plugin through:
-
-1. **Metrics File**: `/tmp/ddos_inspector_stats` - Written by the plugin
-2. **Log Files**: Snort alert and event logs
-3. **Process Monitoring**: Live Snort process statistics
-
-### Metrics Collected
-
-#### DDoS Inspector Metrics
-- `ddos_inspector_packets_processed_total`: Total packets processed
-- `ddos_inspector_packets_blocked_total`: Total packets blocked
-- `ddos_inspector_attack_detections_total{type="syn_flood"}`: SYN flood detections
-- `ddos_inspector_attack_detections_total{type="slowloris"}`: Slowloris detections
-- `ddos_inspector_attack_detections_total{type="udp_flood"}`: UDP flood detections
-- `ddos_inspector_attack_detections_total{type="icmp_flood"}`: ICMP flood detections
-- `ddos_inspector_current_stats{metric="entropy"}`: Current entropy value
-- `ddos_inspector_current_stats{metric="rate"}`: Current packet rate
-- `ddos_inspector_current_stats{metric="connections"}`: Active connections
-- `ddos_inspector_current_stats{metric="blocked_ips"}`: Blocked IP count
-- `ddos_inspector_detection_time_milliseconds`: Attack detection latency
-
-#### Snort Process Metrics
-- `snort_cpu_usage_percent`: Snort CPU usage
-- `snort_memory_usage_bytes`: Snort memory consumption
-- `snort_uptime_seconds`: Snort process uptime
-- `snort_packets_analyzed_total`: Total packets analyzed
-- `snort_alerts_generated_total`: Total alerts generated
-- `snort_packet_processing_rate`: Packets per second
-- `snort_active_rules_count`: Number of active rules
-
-## Quick Start
-
-### Prerequisites
-- Docker and Docker Compose installed
-- DDoS Inspector plugin compiled and ready
-- Snort3 with your plugin configured
-
-### 1. Deploy the Dashboard
+### **Generate Test Traffic**
 ```bash
-cd "Prometheus-ELK metrics dashboard"
-./deploy.sh
+# Test SYN flood detection
+sudo ./scripts/run_syn_flood.sh --target 127.0.0.1 --duration 30
+
+# Test Slowloris attack
+sudo ./scripts/run_slowloris.sh --target 127.0.0.1 --duration 30
+
+# Generate HTTP flood
+for i in {1..100}; do
+    curl -s http://localhost/test_page > /dev/null &
+done
 ```
 
-### 2. Access the Dashboards
-- **Grafana**: http://localhost:3000 (admin/admin)
-- **Kibana**: http://localhost:5601
-- **Prometheus**: http://localhost:9090
+### **Verify Dashboard Updates**
+1. **Grafana**: Watch attack counters increase in real-time
+2. **Kibana**: See new alert entries appear
+3. **Prometheus**: Query metrics directly
+4. **System**: Check blocked IPs with `sudo nft list tables`
 
-### 3. Configure Data Sources
-
-#### Grafana Configuration
-1. Go to Configuration → Data Sources
-2. Add Prometheus data source: `http://prometheus:9090`
-3. Import the pre-built dashboards (coming in next update)
-
-#### Kibana Configuration
-1. Go to Stack Management → Index Patterns
-2. Create index pattern: `snort-logs-*`
-3. Set timestamp field: `@timestamp`
-
-### 4. Start Your DDoS Inspector Plugin
-
-Ensure your plugin writes metrics to `/tmp/ddos_inspector_stats` in the format:
+### **Sample Test Alerts**
+Add to `logs/alert_fast.txt` for testing:
 ```
-packets_processed:12345
-packets_blocked:67
-syn_floods:3
-slowloris_attacks:1
-udp_floods:2
-icmp_floods:0
-connections:45
-blocked_ips:12
-entropy:1.85
-rate:1024.5
-detection_time:15
+[**] [1:1000001:0] SYN Flood Detected [**] {TCP} 192.168.1.100:12345 -> 10.0.0.1:80
+[**] [1:1000002:0] Slowloris Attack Detected [**] {HTTP} 192.168.1.101:54321 -> 10.0.0.1:443
+[**] [1:1000003:0] UDP Flood Detected [**] {UDP} 192.168.1.102:53 -> 10.0.0.1:53
 ```
 
-## Real-Time Monitoring Features
+---
 
-### Live Attack Detection
-- Real-time visualization of DDoS attacks as they're detected
-- Attack type breakdown and frequency analysis
-- Geographic mapping of attack sources (if IP geolocation is enabled)
+## 🎛️ **Dashboard Usage Guide**
 
-### Performance Monitoring
-- Plugin performance metrics and resource usage
-- Snort process health and statistics
-- System-level monitoring (CPU, memory, network)
+### **Monitoring Active Attacks**
+1. Open Grafana DDoS Dashboard
+2. Check the **Attack Overview** panel for real-time counts
+3. Monitor **Traffic Analysis** for anomaly patterns
+4. Review **Blocked IPs** for mitigation status
 
-### Alerting
-- Configurable alerts for attack thresholds
-- Performance degradation warnings
-- System resource alerts
+### **Investigating Incidents**
+1. Switch to Kibana for detailed logs
+2. Filter by time range during the incident
+3. Analyze source IPs and attack patterns
+4. Cross-reference with Grafana performance metrics
 
-## Advanced Configuration
+### **Performance Tuning**
+1. Monitor **Detection Latency** in Grafana
+2. Check **CPU/Memory Usage** trends
+3. Adjust plugin thresholds based on false positive rates
+4. Review **Rule Efficiency** in Snort stats
 
-### Custom Metrics
-Add custom metrics to your DDoS Inspector plugin by writing to the metrics file:
+---
+
+## 🚨 **Alerting Configuration**
+
+### **Grafana Alerts**
+```yaml
+# Example alert rules (configured in Grafana UI):
+- alert: HighAttackRate
+  expr: rate(ddos_inspector_packets_blocked_total[5m]) > 10
+  for: 30s
+  labels:
+    severity: warning
+  annotations:
+    summary: "High DDoS attack rate detected"
+
+- alert: PluginDown
+  expr: up{job="ddos_inspector"} == 0
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: "DDoS Inspector plugin is down"
+```
+
+### **Notification Channels**
+- Slack integration
+- Email alerts
+- PagerDuty escalation
+- Webhook notifications
+
+---
+
+## 🔧 **Troubleshooting**
+
+### **Common Issues**
+
+#### **🔴 Metrics Not Appearing**
+```bash
+# Check metrics file
+ls -la /tmp/ddos_inspector_stats
+cat /tmp/ddos_inspector_stats
+
+# Verify exporter
+curl http://localhost:9091/metrics
+
+# Check container logs
+docker-compose logs ddos-metrics
+```
+
+#### **🔴 Dashboard Not Loading**
+```bash
+# Check service status
+docker-compose ps
+
+# Restart services
+docker-compose restart grafana prometheus
+
+# Check resources
+docker stats
+```
+
+#### **🔴 No Log Data in Kibana**
+```bash
+# Check Elasticsearch
+curl http://localhost:9200/_cluster/health
+
+# Verify Logstash processing
+docker-compose logs logstash
+
+# Check log file permissions
+ls -la logs/alert_fast.txt
+```
+
+### **Performance Optimization**
+
+#### **For High Traffic Environments**
+```yaml
+# Adjust in docker-compose.yml
+elasticsearch:
+  environment:
+    - ES_JAVA_OPTS=-Xms2g -Xmx2g  # Increase memory
+
+prometheus:
+  command:
+    - '--storage.tsdb.retention.time=72h'  # Reduce retention
+```
+
+#### **Resource Monitoring**
+```bash
+# Monitor system resources
+htop
+iotop
+docker stats
+
+# Check disk usage
+df -h
+du -sh logs/
+```
+
+---
+
+## 🔒 **Security & Production Deployment**
+
+### **Authentication Setup**
+```bash
+# Enable Grafana authentication
+# Edit grafana/grafana.ini:
+[auth]
+disable_login_form = false
+
+[security]
+admin_user = your_admin
+admin_password = your_secure_password
+```
+
+### **TLS/SSL Configuration**
+```yaml
+# Add to docker-compose.yml for HTTPS
+grafana:
+  environment:
+    - GF_SERVER_PROTOCOL=https
+    - GF_SERVER_CERT_FILE=/etc/ssl/grafana.crt
+    - GF_SERVER_CERT_KEY=/etc/ssl/grafana.key
+```
+
+### **Data Backup**
+```bash
+# Backup Grafana dashboards
+curl -s "http://admin:admin@localhost:3000/api/search?type=dash-db" | \
+jq -r '.[] | .uri' | xargs -I {} curl -s "http://admin:admin@localhost:3000/api/dashboards/{}" > backup.json
+
+# Backup Elasticsearch data
+docker exec elasticsearch elasticsearch-dump --input=http://localhost:9200 --output=/backup
+```
+
+---
+
+## 📚 **Advanced Usage**
+
+### **Custom Metrics**
+Add to your DDoS Inspector plugin:
 ```cpp
-void write_custom_metric(const std::string& name, uint64_t value) {
+// Custom metric example
+void writeCustomMetric(const std::string& name, double value) {
     std::ofstream file("/tmp/ddos_inspector_stats", std::ios::app);
     file << name << ":" << value << std::endl;
 }
 ```
 
-### Log Processing
-Customize Logstash configuration in `logstash/pipeline/snort.conf` to parse additional log formats.
+### **Dashboard Customization**
+1. Export existing dashboard JSON
+2. Modify panels and queries
+3. Import customized version
+4. Share with team via Git
 
-### Retention Policies
-- Prometheus: 200 hours of metrics retention
-- Elasticsearch: Configure in docker-compose.yml for longer retention
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Metrics not appearing**
-   - Check if `/tmp/ddos_inspector_stats` file exists and is readable
-   - Verify DDoS Inspector plugin is writing metrics
-   - Check metrics exporter logs: `docker-compose logs ddos-metrics`
-
-2. **Snort stats not showing**
-   - Ensure Snort is running and accessible
-   - Check Snort log file permissions
-   - Review snort-stats exporter logs: `docker-compose logs snort-stats`
-
-3. **Services not starting**
-   - Check system resources (especially memory for Elasticsearch)
-   - Verify port availability
-   - Review service logs: `docker-compose logs [service-name]`
-
-### Debugging Commands
+### **API Integration**
 ```bash
-# View all service logs
-docker-compose logs -f
+# Query Prometheus API
+curl 'http://localhost:9090/api/v1/query?query=ddos_inspector_packets_processed_total'
 
-# Check specific service
-docker-compose logs -f ddos-metrics
-
-# Check metrics endpoints
-curl http://localhost:9091/metrics
-curl http://localhost:9092/metrics
-
-# Restart specific service
-docker-compose restart ddos-metrics
+# Grafana API for automation
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+     'http://localhost:3000/api/dashboards/home'
 ```
 
-## Development
+---
 
-### Building Custom Exporters
-The metrics exporters are built from source:
-- `ddos_inspector_real_metrics.cpp`: C++ exporter for DDoS Inspector metrics
-- `snort_stats_exporter.py`: Python exporter for Snort statistics
+## 🆘 **Support & Resources**
 
-### Extending Metrics
-1. Add new metrics to the appropriate exporter
-2. Rebuild the containers: `docker-compose build`
-3. Update Grafana dashboards to display new metrics
+### **Getting Help**
+- 📖 **Documentation**: Check the main project README
+- 🐛 **Issues**: GitHub issue tracker
+- 💬 **Community**: Project discussions
+- 📧 **Contact**: Technical support team
 
-## Production Deployment
+### **Useful Commands**
+```bash
+# Quick health check
+./health_check.sh
 
-For production use:
-1. Configure proper authentication for all services
-2. Set up TLS/SSL encryption
-3. Configure backup and disaster recovery
-4. Implement log rotation and cleanup policies
-5. Set up monitoring for the monitoring stack itself
+# View all logs
+docker-compose logs -f
 
-## Support
+# Reset everything
+./reset_dashboard.sh
 
-For issues related to:
-- DDoS Inspector plugin: Check the main project documentation
-- Metrics collection: Review exporter logs and metrics file format
-- Dashboard configuration: Consult Grafana and Kibana documentation
+# Export metrics for analysis
+curl -s http://localhost:9091/metrics > metrics_export.txt
+```
+
+---
+
+## 📈 **What's Next?**
+
+1. **Custom Alerts**: Set up your specific alert thresholds
+2. **Team Dashboards**: Create role-specific views
+3. **Integration**: Connect with your existing monitoring
+4. **Automation**: Set up automated response workflows
+5. **Scaling**: Configure for multi-node deployments
+
+---
+
+**🎉 Your DDoS Inspector monitoring is now ready! Visit http://localhost:3000 to start monitoring your network security in real-time.**
 
 
 

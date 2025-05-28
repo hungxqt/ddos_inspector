@@ -13,7 +13,7 @@
 ### 1. One-Click Installation
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/ddos_inspector.git
+git clone https://github.com/hung-qt/ddos_inspector.git
 cd ddos_inspector
 
 # Install dependencies and build (requires sudo)
