@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 #include <memory>
-#include "../include/stats_engine.hpp"
-#include "../include/behavior_tracker.hpp"
-#include "../include/firewall_action.hpp"
-#include "../include/packet_data.hpp"
+#include "stats_engine.hpp"
+#include "behavior_tracker.hpp"
+#include "firewall_action.hpp"
+#include "packet_data.hpp"
 
 // Test fixture for StatsEngine
 class StatsEngineTest : public ::testing::Test {

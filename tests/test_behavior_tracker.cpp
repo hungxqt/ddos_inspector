@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "../include/behavior_tracker.hpp"
-#include "../include/packet_data.hpp"
+#include "behavior_tracker.hpp"
+#include "packet_data.hpp"
 #include <vector>
 #include <chrono>
 #include <thread>

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "../include/stats_engine.hpp"
-#include "../include/packet_data.hpp"
+#include "stats_engine.hpp"
+#include "packet_data.hpp"
 #include <vector>
 #include <string>
 

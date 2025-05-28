@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../include/firewall_action.hpp"
+#include "firewall_action.hpp"
 #include <vector>
 #include <chrono>
 #include <thread>
