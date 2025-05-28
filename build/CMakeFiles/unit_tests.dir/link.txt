@@ -1,1 +1,0 @@
-/usr/bin/g++ -g CMakeFiles/unit_tests.dir/tests/unit_tests.cpp.o CMakeFiles/unit_tests.dir/src/stats_engine.cpp.o CMakeFiles/unit_tests.dir/src/behavior_tracker.cpp.o CMakeFiles/unit_tests.dir/src/firewall_action.cpp.o -o unit_tests  lib/libgtest.a lib/libgtest_main.a -lpthread lib/libgtest.a

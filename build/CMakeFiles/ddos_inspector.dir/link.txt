@@ -1,1 +1,0 @@
-/usr/bin/g++ -fPIC -g -shared -Wl,-soname,ddos_inspector.so -o ddos_inspector.so CMakeFiles/ddos_inspector.dir/src/behavior_tracker.cpp.o CMakeFiles/ddos_inspector.dir/src/ddos_inspector.cpp.o CMakeFiles/ddos_inspector.dir/src/firewall_action.cpp.o CMakeFiles/ddos_inspector.dir/src/stats_engine.cpp.o  -lpthread

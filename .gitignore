@@ -30,3 +30,75 @@
 *.exe
 *.out
 *.app
+
+# Build directories
+build/
+bin/
+lib/
+obj/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Makefile
+
+# Test results and logs
+Testing/
+*.log
+logs/
+*.txt
+
+# Google Test dependencies (downloaded during build)
+_deps/
+
+# IDE and editor files
+.vscode/
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# OS specific files
+Thumbs.db
+ehthumbs.db
+
+# Package files
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Core dumps
+core
+core.*
+
+# Backup files
+*.bak
+*.backup
+
+# Runtime configuration (if containing sensitive data)
+# Uncomment if your config files contain secrets:
+# *.conf
+# config.yaml
+
+# Python cache (for scripts)
+__pycache__/
+*.pyc
+*.pyo
+
+# Node modules (if any JavaScript tools)
+node_modules/
+
+# Environment files
+.env
+.env.local

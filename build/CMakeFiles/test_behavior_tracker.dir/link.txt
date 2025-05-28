@@ -1,1 +1,0 @@
-/usr/bin/g++ -g CMakeFiles/test_behavior_tracker.dir/tests/test_behavior_tracker.cpp.o CMakeFiles/test_behavior_tracker.dir/src/behavior_tracker.cpp.o -o test_behavior_tracker  lib/libgtest.a lib/libgtest_main.a -lpthread lib/libgtest.a
