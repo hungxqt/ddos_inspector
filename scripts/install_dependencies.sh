@@ -55,6 +55,16 @@ if dpkg --compare-versions "$CMAKE_VERSION" lt "$REQUIRED_CMAKE_VERSION"; then
   ./bootstrap && make -j"$(nproc)" && sudo make install
 fi
 
+echo "[*] Building Google Test..."
+cd /opt
+safe_git_clone https://github.com/google/googletest.git googletest
+cd googletest
+mkdir -p build
+cd build
+cmake ..
+make -j"$(nproc)"
+sudo make install
+
 echo "[*] Building libdaq..."
 cd /opt
 safe_git_clone https://github.com/snort3/libdaq.git libdaq

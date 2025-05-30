@@ -206,28 +206,109 @@ void DdosInspector::eval(Packet* p)
         }
     }
 
-    // Analyze packet
+    // Analyze packet with improved correlation
     bool stats_anomaly = stats_engine->analyze(pkt_data);
     bool behavior_anomaly = behavior_tracker->inspect(pkt_data);
 
-    // Classify attack type and increment counters
+    // Enhanced attack classification with confidence scoring
     if (stats_anomaly || behavior_anomaly) {
-        if (proto == IPPROTO_TCP && pkt_data.is_syn && !pkt_data.is_ack) {
-            syn_flood_detections++;
-        } else if (proto == IPPROTO_TCP && pkt_data.is_http) {
-            slowloris_detections++;
-        } else if (proto == IPPROTO_UDP) {
-            udp_flood_detections++;
-        } else if (proto == IPPROTO_ICMP) {
-            icmp_flood_detections++;
-        }
+        AttackInfo attack_info = classifyAttack(pkt_data, stats_anomaly, behavior_anomaly, proto);
         
-        firewall_action->block(pkt_data.src_ip);
-        packets_blocked++;
+        // Only block if confidence is high enough
+        if (attack_info.confidence >= 0.7) { // 70% confidence threshold
+            incrementAttackCounter(attack_info.type);
+            
+            // Progressive blocking based on severity
+            if (attack_info.severity >= AttackInfo::SEVERITY_HIGH) {
+                firewall_action->block(pkt_data.src_ip);
+                packets_blocked++;
+            } else if (attack_info.severity >= AttackInfo::SEVERITY_MEDIUM) {
+                // Rate limit instead of full block for medium severity
+                firewall_action->rate_limit(pkt_data.src_ip, attack_info.severity);
+            }
+            // Log low severity attacks but don't block
+        }
     }
     
     // Update metrics file periodically
     writeMetrics();
+}
+
+AttackInfo DdosInspector::classifyAttack(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly, uint8_t proto) {
+    AttackInfo attack;
+    attack.confidence = 0.0;
+    attack.severity = AttackInfo::SEVERITY_LOW;
+    attack.type = AttackInfo::UNKNOWN;
+    
+    // Multi-factor analysis for better accuracy
+    double behavioral_score = behavior_anomaly ? 0.6 : 0.0;
+    double statistical_score = stats_anomaly ? 0.4 : 0.0;
+    
+    if (proto == IPPROTO_TCP) {
+        if (pkt_data.is_syn && !pkt_data.is_ack) {
+            attack.type = AttackInfo::SYN_FLOOD;
+            attack.confidence = behavioral_score + statistical_score;
+            // Higher confidence if both engines detect anomaly
+            if (stats_anomaly && behavior_anomaly) attack.confidence += 0.2;
+            
+            // Determine severity based on rate and volume
+            double current_rate = stats_engine->get_current_rate();
+            if (current_rate > 100000) {
+                attack.severity = AttackInfo::SEVERITY_CRITICAL;
+            } else if (current_rate > 50000) {
+                attack.severity = AttackInfo::SEVERITY_HIGH;
+            } else {
+                attack.severity = AttackInfo::SEVERITY_MEDIUM;
+            }
+        } else if (pkt_data.is_http) {
+            // Distinguish between HTTP flood and Slowloris
+            size_t connection_count = behavior_tracker->get_connection_count();
+            double current_rate = stats_engine->get_current_rate();
+            
+            if (connection_count > 1000 && current_rate < 10000) {
+                attack.type = AttackInfo::SLOWLORIS;
+                attack.confidence = behavioral_score + 0.3; // Behavioral detection more important for Slowloris
+            } else {
+                attack.type = AttackInfo::HTTP_FLOOD;
+                attack.confidence = behavioral_score + statistical_score + 0.1;
+            }
+            attack.severity = (connection_count > 5000) ? AttackInfo::SEVERITY_HIGH : AttackInfo::SEVERITY_MEDIUM;
+        } else if (pkt_data.is_ack && !pkt_data.is_syn) {
+            attack.type = AttackInfo::ACK_FLOOD;
+            attack.confidence = behavioral_score + statistical_score;
+            attack.severity = AttackInfo::SEVERITY_MEDIUM;
+        }
+    } else if (proto == IPPROTO_UDP) {
+        attack.type = AttackInfo::UDP_FLOOD;
+        attack.confidence = behavioral_score + statistical_score;
+        attack.severity = (stats_engine->get_current_rate() > 75000) ? AttackInfo::SEVERITY_HIGH : AttackInfo::SEVERITY_MEDIUM;
+    } else if (proto == IPPROTO_ICMP) {
+        attack.type = AttackInfo::ICMP_FLOOD;
+        attack.confidence = statistical_score + 0.3; // ICMP floods are primarily volume-based
+        attack.severity = AttackInfo::SEVERITY_MEDIUM;
+    }
+    
+    return attack;
+}
+
+void DdosInspector::incrementAttackCounter(AttackInfo::Type type) {
+    switch (type) {
+        case AttackInfo::SYN_FLOOD:
+            syn_flood_detections++;
+            break;
+        case AttackInfo::HTTP_FLOOD:
+        case AttackInfo::SLOWLORIS:
+            slowloris_detections++;
+            break;
+        case AttackInfo::UDP_FLOOD:
+            udp_flood_detections++;
+            break;
+        case AttackInfo::ICMP_FLOOD:
+            icmp_flood_detections++;
+            break;
+        default:
+            break;
+    }
 }
 
 void DdosInspector::show_stats(std::ostream& os)

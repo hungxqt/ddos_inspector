@@ -13,11 +13,23 @@
 #include <memory>
 #include <string>
 #include <chrono>
+#include "packet_data.hpp"
 
 // Forward declarations
 class StatsEngine;
 class BehaviorTracker;
 class FirewallAction;
+
+// Attack classification structures
+struct AttackInfo {
+    enum Type { SYN_FLOOD, HTTP_FLOOD, SLOWLORIS, ACK_FLOOD, UDP_FLOOD, ICMP_FLOOD, VOLUME_ATTACK, UNKNOWN };
+    enum Severity { SEVERITY_LOW = 1, SEVERITY_MEDIUM = 2, SEVERITY_HIGH = 3, SEVERITY_CRITICAL = 4 };
+    
+    Type type;
+    Severity severity;
+    double confidence;
+    std::string description;
+};
 
 class DdosInspectorModule : public snort::Module
 {
@@ -72,6 +84,9 @@ private:
     std::chrono::steady_clock::time_point last_metrics_update;
     std::chrono::steady_clock::time_point detection_start_time;
     
+    // Enhanced detection methods
+    AttackInfo classifyAttack(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly, uint8_t proto);
+    void incrementAttackCounter(AttackInfo::Type type);
     void writeMetrics();
 };
 

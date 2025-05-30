@@ -134,11 +134,14 @@ TEST_F(BehaviorTrackerTest, HTTPFloodDetection) {
     http_pkt.src_ip = "192.168.1.200";
     http_pkt.dst_ip = "10.0.0.1";
     http_pkt.is_http = true;
+    http_pkt.is_syn = false;  // Explicitly set to avoid conflicts
+    http_pkt.is_ack = false;  // Explicitly set to avoid conflicts
     http_pkt.payload = "GET / HTTP/1.1\r\nHost: target.com\r\n\r\n";
     
-    // Send many HTTP requests rapidly
+    // Send many HTTP requests rapidly - need more than 150 for new threshold
     bool anomaly_detected = false;
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < 200; i++) {
+        http_pkt.session_id = "http_session_" + std::to_string(i); // Unique session for each request
         if (tracker->inspect(http_pkt)) {
             anomaly_detected = true;
             break;
