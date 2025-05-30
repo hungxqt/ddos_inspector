@@ -303,4 +303,4 @@ docker-compose up -d
 
 ---
 
-*Built with ❤️ by the ADHHP Research Team (2025)*
+*Built with ❤️ by the ADHHP Team - FPT University*
