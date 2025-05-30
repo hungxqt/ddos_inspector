@@ -4,6 +4,12 @@ project(ddos_inspector)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable testing support
+enable_testing()
+
+# Optional: Include CDash support to suppress DartConfiguration.tcl warning
+include(CTest)
+
 # Use the correct Snort 3 include directory
 set(SNORT3_INCLUDE_DIR "/usr/local/snort3/include/snort")
 
