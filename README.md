@@ -85,7 +85,7 @@ snort --version
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/adhhp-research/ddos_inspector.git
+git clone https://github.com/hung-qt/ddos_inspector.git
 cd ddos_inspector
 
 # 2. Execute automated installation
