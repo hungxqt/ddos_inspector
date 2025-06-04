@@ -1,0 +1,5 @@
+apiVersion: 1
+
+# Alerting provisioning configuration
+# Currently no alert rules are being provisioned
+groups: []

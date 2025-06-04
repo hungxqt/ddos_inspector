@@ -17,7 +17,7 @@ void FirewallAction::block(const std::string& ip) {
     if (it == blocked_ips.end() || !it->second.is_blocked) {
         // Block new IP or re-block expired IP
         if (execute_block_command(ip)) {
-            blocked_ips[ip] = {now, true};
+            blocked_ips[ip] = {now, true, 0};  // Initialize all fields including rate_limit_level
         }
     } else {
         // Update timestamp for already blocked IP
@@ -76,6 +76,12 @@ bool FirewallAction::execute_block_command(const std::string& ip) {
     #ifdef TESTING
         return true;
     #else
+        // Ensure nftables infrastructure exists before blocking
+        std::system("nft add table inet filter 2>/dev/null || true");
+        std::system("nft add set inet filter ddos_ip_set '{ type ipv4_addr; flags dynamic,timeout; timeout 10m; }' 2>/dev/null || true");
+        std::system("nft add rule inet filter input ip saddr @ddos_ip_set drop 2>/dev/null || true");
+        
+        // Now block the IP
         std::string cmd = "nft add element inet filter ddos_ip_set { " + ip + " } 2>/dev/null || "
                          "iptables -I INPUT -s " + ip + " -j DROP 2>/dev/null";
         

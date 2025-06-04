@@ -289,7 +289,7 @@ TEST(BehaviorTrackerDetailedTest, DebugEventTypes) {
     http_pkt.session_id = "debug_http_1";
     http_pkt.size = 200;
     
-    bool result1 = tracker->inspect(http_pkt);
+    tracker->inspect(http_pkt);
     
     // Test a single ACK packet
     PacketData ack_pkt;
@@ -301,7 +301,7 @@ TEST(BehaviorTrackerDetailedTest, DebugEventTypes) {
     ack_pkt.session_id = "debug_ack_1";
     ack_pkt.size = 60;
     
-    bool result2 = tracker->inspect(ack_pkt);
+    tracker->inspect(ack_pkt);
     
     // This test always passes - it's just for debugging
     EXPECT_TRUE(true);

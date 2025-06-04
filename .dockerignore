@@ -1,0 +1,52 @@
+# Build artifacts
+build/
+*.o
+*.so
+*.a
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# CMake cache and temporary files (but allow CMakeLists.txt)
+CMakeCache.txt
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+CTestTestfile.cmake
+DartConfiguration.tcl
+Makefile
+compile_commands.json
+*.ninja
+CMakeFiles/
+Testing/
+
+# Whitelist approach - ignore everything first
+*
+
+# Then allow specific files and directories
+!CMakeLists.txt
+!snort_ddos_config.lua
+!include/
+!src/
+!tests/
+!scripts/
+!prometheus-elk-metrics/
+!docker/
+!LICENSE
+!README.md

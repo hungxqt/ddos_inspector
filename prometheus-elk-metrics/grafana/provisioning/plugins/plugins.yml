@@ -1,0 +1,5 @@
+apiVersion: 1
+
+# Plugin provisioning configuration
+# Currently no plugins are being provisioned
+apps: []

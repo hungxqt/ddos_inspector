@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # DDoS Inspector main service
   ddos-inspector:
@@ -8,36 +6,44 @@ services:
       dockerfile: docker/Dockerfile
     image: ddos_inspector:latest
     container_name: ddos_inspector
-    restart: unless-stopped
-    privileged: true  # Required for firewall operations
-    network_mode: host  # Required for packet capture
+    privileged: true  # Required for firewall operations and host network access
+    network_mode: host  # Direct access to host network interfaces
     environment:
-      - SNORT_INTERFACE=${SNORT_INTERFACE:-eth0}
+      - NETWORK_INTERFACE=${NETWORK_INTERFACE:-eth0}  # Host's network interface
+      - SNORT_INTERFACE=${NETWORK_INTERFACE:-eth0}    # Legacy compatibility
       - ENABLE_METRICS=true
       - WAIT_FOR_INTERFACE=true
+      - PROMETHEUS_PORT=9091
+      - STATS_PORT=9092
+      - HOST_FIREWALL_MODE=true  # Enable host firewall integration
     volumes:
       - ./logs:/var/log/snort
-      - ./data:/tmp
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # For container metrics
+      - ./data:/app/data  # Stats and metrics output
+      - ./snort_ddos_config.lua:/etc/snort/snort_ddos_config.lua:ro
+      - /proc:/host/proc:ro  # Access to host process info
+      - /sys:/host/sys:ro    # Access to host system info
+      - /run/xtables.lock:/run/xtables.lock  # Share iptables lock with host
     healthcheck:
-      test: ["CMD", "snort", "--version"]
+      test: ["CMD", "sh", "-c", "snort --version && [ -f /app/data/ddos_inspector_stats ]"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-    depends_on:
-      - prometheus
-      - elasticsearch
+      start_period: 60s
+    cap_add:
+      - NET_ADMIN  # Required for nftables/iptables operations
+      - NET_RAW    # Required for raw packet capture
+      - SYS_ADMIN  # Required for host system access
+    devices:
+      - /dev/net/tun  # TUN/TAP device access if needed
 
   # Prometheus for metrics collection
   prometheus:
     image: prom/prometheus:latest
     container_name: ddos_prometheus
-    restart: unless-stopped
     ports:
       - "9090:9090"
     volumes:
-      - ./Prometheus-ELK\ metrics\ dashboard/prometheus:/etc/prometheus
+      - ./prometheus-elk-metrics/prometheus:/etc/prometheus
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -46,14 +52,16 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--storage.tsdb.retention.time=24h'
       - '--web.enable-lifecycle'
+      - '--web.listen-address=0.0.0.0:9090'
     networks:
-      - monitoring
+      - ddos_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Grafana for visualization
   grafana:
     image: grafana/grafana:latest
     container_name: ddos_grafana
-    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
@@ -61,26 +69,34 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_DOMAIN=localhost
       - GF_SMTP_ENABLED=false
+      - GF_SERVER_HTTP_PORT=3000
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./Prometheus-ELK\ metrics\ dashboard/grafana:/etc/grafana/provisioning
-    depends_on:
-      - prometheus
+      - ./prometheus-elk-metrics/grafana/provisioning:/etc/grafana/provisioning
+      - ./prometheus-elk-metrics/grafana/dashboards:/etc/grafana/dashboards
     networks:
-      - monitoring
+      - ddos_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Elasticsearch for log storage
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    image: elasticsearch:8.15.0
     container_name: ddos_elasticsearch
-    restart: unless-stopped
+    ports:
+      - "9200:9200"
+      - "9300:9300"
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms1g -Xmx2g
       - network.host=0.0.0.0
-    ports:
-      - "9200:9200"
+      - http.port=9200
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     healthcheck:
@@ -89,33 +105,46 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - logging
+      - ddos_net
 
   # Logstash for log processing
   logstash:
-    image: docker.elastic.co/logstash/logstash:8.13.0
+    image: logstash:8.15.0
     container_name: ddos_logstash
-    restart: unless-stopped
+    ports:
+      - "9600:9600"  # Logstash API port
+      - "5044:5044"  # Beats input port
     volumes:
-      - ./Prometheus-ELK\ metrics\ dashboard/logstash:/usr/share/logstash/pipeline
+      - ./prometheus-elk-metrics/logstash/pipeline:/usr/share/logstash/pipeline
+      - ./prometheus-elk-metrics/logstash/config:/usr/share/logstash/config
       - ./logs:/var/log/snort:ro
     environment:
       - LS_JAVA_OPTS=-Xmx1g -Xms1g
+      - xpack.monitoring.enabled=false
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9600/_node/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     networks:
-      - logging
+      - ddos_net
 
   # Kibana for log visualization
   kibana:
-    image: docker.elastic.co/kibana/kibana:8.13.0
+    image: kibana:8.15.0
     container_name: ddos_kibana
-    restart: unless-stopped
     ports:
       - "5601:5601"
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=http://ddos_elasticsearch:9200
       - SERVER_NAME=ddos-kibana
+      - SERVER_PORT=5601
+      - xpack.security.enabled=false
+      - xpack.encryptedSavedObjects.encryptionKey=32-character-long-encryption-key-here
     depends_on:
       - elasticsearch
     healthcheck:
@@ -124,15 +153,13 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - logging
+      - ddos_net
 
   # Node Exporter for system metrics
   node-exporter:
     image: prom/node-exporter:latest
     container_name: ddos_node_exporter
-    restart: unless-stopped
-    ports:
-      - "9100:9100"
+    network_mode: host
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -142,32 +169,58 @@ services:
       - '--path.rootfs=/rootfs'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    networks:
-      - monitoring
+      - '--web.listen-address=0.0.0.0:9100'
 
-  # Alert Manager for notifications
+  # AlertManager for handling alerts
   alertmanager:
     image: prom/alertmanager:latest
     container_name: ddos_alertmanager
-    restart: unless-stopped
     ports:
       - "9093:9093"
     volumes:
-      - ./alertmanager:/etc/alertmanager
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--storage.path=/alertmanager'
-      - '--web.external-url=http://localhost:9093'
+      - ./prometheus-elk-metrics/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
     networks:
-      - monitoring
+      - ddos_net
+
+  # DDoS Inspector Metrics Exporter
+  ddos-metrics-exporter:
+    build:
+      context: ./prometheus-elk-metrics
+      dockerfile: Dockerfile.metrics
+    container_name: ddos_metrics_exporter
+    ports:
+      - "9091:9091"
+    environment:
+      - DDOS_STATS_FILE=/app/data/ddos_inspector_stats
+      - BIND_ADDRESS=0.0.0.0:9091
+    volumes:
+      - ./data:/app/data:ro
+    networks:
+      - ddos_net
+
+  # Snort Stats Exporter
+  snort-stats-exporter:
+    build:
+      context: ./prometheus-elk-metrics
+      dockerfile: Dockerfile.snort-stats
+    container_name: snort_stats_exporter
+    ports:
+      - "9092:9092"
+    environment:
+      - SNORT_STATS_FILE=/var/log/snort/snort_stats.log
+      - BIND_ADDRESS=0.0.0.0:9092
+    volumes:
+      - ./logs:/var/log/snort:ro
+    networks:
+      - ddos_net
 
 volumes:
   prometheus_data:
   grafana_data:
   elasticsearch_data:
+  alertmanager_data:
 
 networks:
-  monitoring:
-    driver: bridge
-  logging:
+  ddos_net:
     driver: bridge

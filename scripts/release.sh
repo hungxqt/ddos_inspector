@@ -3,12 +3,12 @@
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Get script directory and source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Source common functions library
+source "$SCRIPT_DIR/common_functions.sh"
 
 # Configuration
 REPO_NAME="ddos-inspector"
@@ -16,36 +16,19 @@ PLUGIN_NAME="ddos_inspector"
 BUILD_DIR="build"
 DIST_DIR="dist"
 
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
 check_prerequisites() {
-    log_info "Checking prerequisites..."
+    print_info "Checking prerequisites..."
     
     # Check if we're in a git repository
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
-        log_error "Not in a git repository"
+        print_error "Not in a git repository"
         exit 1
     fi
     
     # Check if we're on main branch
     current_branch=$(git branch --show-current)
     if [[ "$current_branch" != "main" ]]; then
-        log_warning "You're on branch '$current_branch', not 'main'"
+        print_warning "You're on branch '$current_branch', not 'main'"
         read -p "Continue? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -55,24 +38,24 @@ check_prerequisites() {
     
     # Check for uncommitted changes
     if ! git diff-index --quiet HEAD --; then
-        log_error "You have uncommitted changes. Please commit or stash them first."
+        print_error "You have uncommitted changes. Please commit or stash them first."
         exit 1
     fi
     
     # Check if gh CLI is installed
     if ! command -v gh &> /dev/null; then
-        log_error "GitHub CLI (gh) is not installed. Please install it first."
-        log_info "Visit: https://cli.github.com/"
+        print_error "GitHub CLI (gh) is not installed. Please install it first."
+        print_info "Visit: https://cli.github.com/"
         exit 1
     fi
     
     # Check if authenticated with GitHub
     if ! gh auth status &> /dev/null; then
-        log_error "Not authenticated with GitHub. Please run 'gh auth login' first."
+        print_error "Not authenticated with GitHub. Please run 'gh auth login' first."
         exit 1
     fi
     
-    log_success "Prerequisites check passed"
+    print_success "Prerequisites check passed"
 }
 
 get_version() {
@@ -81,7 +64,7 @@ get_version() {
     else
         # Get current version from git tags
         current_version=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-        log_info "Current version: $current_version"
+        print_info "Current version: $current_version"
         
         echo "Select release type:"
         echo "1) Patch (v1.0.1)"
@@ -95,7 +78,7 @@ get_version() {
             2) version=$(echo $current_version | awk -F. '{$(NF-1) = $(NF-1) + 1; $NF = 0} 1' | sed 's/ /./g') ;;
             3) version=$(echo $current_version | awk -F. '{$1 = substr($1,1,1) (substr($1,2) + 1); $(NF-1) = 0; $NF = 0} 1' | sed 's/ /./g') ;;
             4) read -p "Enter custom version (e.g., v1.2.3): " version ;;
-            *) log_error "Invalid choice"; exit 1 ;;
+            *) print_error "Invalid choice"; exit 1 ;;
         esac
     fi
     
@@ -104,11 +87,11 @@ get_version() {
         version="v$version"
     fi
     
-    log_info "Target version: $version"
+    print_info "Target version: $version"
 }
 
 run_tests() {
-    log_info "Running tests..."
+    print_info "Running tests..."
     
     if [[ -d "$BUILD_DIR" ]]; then
         rm -rf "$BUILD_DIR"
@@ -121,37 +104,37 @@ run_tests() {
     make -j$(nproc)
     
     if ! ctest --output-on-failure; then
-        log_error "Tests failed. Aborting release."
+        print_error "Tests failed. Aborting release."
         exit 1
     fi
     
     cd ..
-    log_success "All tests passed"
+    print_success "All tests passed"
 }
 
 build_plugin() {
-    log_info "Building optimized plugin..."
+    print_info "Building optimized plugin..."
     
     cd "$BUILD_DIR"
     make -j$(nproc) "$PLUGIN_NAME"
     
     # Verify plugin was built
     if [[ ! -f "${PLUGIN_NAME}.so" ]]; then
-        log_error "Plugin build failed - ${PLUGIN_NAME}.so not found"
+        print_error "Plugin build failed - ${PLUGIN_NAME}.so not found"
         exit 1
     fi
     
     # Check plugin symbols
     if ! nm -D "${PLUGIN_NAME}.so" | grep -q snort_plugins; then
-        log_warning "Plugin may not have correct Snort symbols"
+        print_warning "Plugin may not have correct Snort symbols"
     fi
     
     cd ..
-    log_success "Plugin built successfully"
+    print_success "Plugin built successfully"
 }
 
 create_distribution() {
-    log_info "Creating distribution package..."
+    print_info "Creating distribution package..."
     
     if [[ -d "$DIST_DIR" ]]; then
         rm -rf "$DIST_DIR"
@@ -168,7 +151,7 @@ create_distribution() {
     
     mkdir -p "$DIST_DIR/scripts"
     cp scripts/nftables_rules.sh "$DIST_DIR/scripts/"
-    cp scripts/setup_env.sh "$DIST_DIR/scripts/"
+    cp scripts/common_functions.sh "$DIST_DIR/scripts/"
     
     # Create version info
     cat > "$DIST_DIR/VERSION" << EOF
@@ -185,14 +168,25 @@ EOF
 
 set -e
 
+# Source common functions if available
+if [ -f "scripts/common_functions.sh" ]; then
+    source scripts/common_functions.sh
+else
+    # Fallback print functions
+    print_info() { echo -e "\033[0;36m[INFO]\033[0m $1"; }
+    print_success() { echo -e "\033[0;32m[SUCCESS]\033[0m $1"; }
+    print_error() { echo -e "\033[0;31m[ERROR]\033[0m $1"; }
+    print_warning() { echo -e "\033[1;33m[WARNING]\033[0m $1"; }
+fi
+
 PLUGIN_DIR="/usr/local/lib/snort3_extra_plugins"
 CONFIG_DIR="/etc/snort"
 
-echo "Installing DDoS Inspector Plugin..."
+print_info "Installing DDoS Inspector Plugin..."
 
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root (use sudo)" 
+   print_error "This script must be run as root (use sudo)" 
    exit 1
 fi
 
@@ -216,11 +210,11 @@ fi
 # Update library cache
 ldconfig
 
-echo "Installation completed!"
-echo "Plugin installed to: $PLUGIN_DIR/ddos_inspector.so"
-echo "Configuration available at: $CONFIG_DIR/snort_ddos_config.lua"
+print_success "Installation completed!"
+print_info "Plugin installed to: $PLUGIN_DIR/ddos_inspector.so"
+print_info "Configuration available at: $CONFIG_DIR/snort_ddos_config.lua"
 echo ""
-echo "Next steps:"
+print_info "Next steps:"
 echo "1. Configure your snort.lua to include the ddos_inspector plugin"
 echo "2. Start Snort with: snort -c /etc/snort/snort.lua -i <interface>"
 EOF
@@ -232,11 +226,11 @@ EOF
     tar -czf "../${PLUGIN_NAME}-${version}-linux-x86_64.tar.gz" *
     cd ..
     
-    log_success "Distribution package created"
+    print_success "Distribution package created"
 }
 
 create_release() {
-    log_info "Creating GitHub release..."
+    print_info "Creating GitHub release..."
     
     # Create and push tag
     git tag -a "$version" -m "Release $version"
@@ -296,12 +290,12 @@ EOF
     # Cleanup
     rm release_notes.md
     
-    log_success "GitHub release created: $version"
+    print_success "GitHub release created: $version"
 }
 
 # Main execution
 main() {
-    log_info "Starting release process for DDoS Inspector Plugin"
+    print_info "Starting release process for DDoS Inspector Plugin"
     
     check_prerequisites
     get_version "$1"
@@ -310,8 +304,8 @@ main() {
     create_distribution
     create_release
     
-    log_success "Release $version completed successfully!"
-    log_info "Release URL: https://github.com/$(gh repo view --json owner,name -q '.owner.login + \"/\" + .name')/releases/tag/$version"
+    print_success "Release $version completed successfully!"
+    print_info "Release URL: https://github.com/$(gh repo view --json owner,name -q '.owner.login + \"/\" + .name')/releases/tag/$version"
 }
 
 # Handle command line arguments

@@ -13,6 +13,7 @@
 #include <netinet/udp.h>
 #include <fstream>
 #include <chrono>
+#include <iostream>
 
 using namespace snort;
 
@@ -45,6 +46,7 @@ static const Parameter ddos_params[] =
 
 DdosInspectorModule::DdosInspectorModule() : Module(DDOS_NAME, DDOS_HELP, ddos_params)
 {
+    std::cout << "✅ DDoS Inspector Plugin Module loaded successfully!" << std::endl;
 }
 
 const Parameter* DdosInspectorModule::get_parameters() const
@@ -72,11 +74,13 @@ bool DdosInspectorModule::set(const char* fqn, Value& v, SnortConfig*)
 
 bool DdosInspectorModule::begin(const char*, int, SnortConfig*)
 {
+    std::cout << "🔧 DDoS Inspector Plugin configuration initialized" << std::endl;
     return true;
 }
 
 bool DdosInspectorModule::end(const char*, int, SnortConfig*)
 {
+    std::cout << "✅ DDoS Inspector Plugin configuration completed successfully" << std::endl;
     return true;
 }
 
@@ -86,6 +90,13 @@ bool DdosInspectorModule::end(const char*, int, SnortConfig*)
 
 DdosInspector::DdosInspector(DdosInspectorModule* mod)
 {
+    std::cout << "🛡️ DDoS Inspector engine starting with configuration:" << std::endl;
+    std::cout << "   - Allow ICMP: " << (mod->allow_icmp ? "enabled" : "disabled") << std::endl;
+    std::cout << "   - Entropy threshold: " << mod->entropy_threshold << std::endl;
+    std::cout << "   - EWMA alpha: " << mod->ewma_alpha << std::endl;
+    std::cout << "   - Block timeout: " << mod->block_timeout << "s" << std::endl;
+    std::cout << "   - Metrics file: " << mod->metrics_file << std::endl;
+    
     allow_icmp = mod->allow_icmp;
     metrics_file_path = mod->metrics_file;
     
@@ -100,6 +111,8 @@ DdosInspector::DdosInspector(DdosInspectorModule* mod)
     slowloris_detections = 0;
     udp_flood_detections = 0;
     icmp_flood_detections = 0;
+    
+    std::cout << "🚀 DDoS Inspector engine initialized and ready for packet analysis!" << std::endl;
 }
 
 DdosInspector::~DdosInspector() = default;
@@ -214,8 +227,13 @@ void DdosInspector::eval(Packet* p)
     if (stats_anomaly || behavior_anomaly) {
         AttackInfo attack_info = classifyAttack(pkt_data, stats_anomaly, behavior_anomaly, proto);
         
-        // Only block if confidence is high enough
-        if (attack_info.confidence >= 0.7) { // 70% confidence threshold
+        // Lower confidence threshold for SYN floods since they naturally have zero entropy
+        double confidence_threshold = 0.5; // Reduced from 0.7 to 0.5
+        if (attack_info.type == AttackInfo::SYN_FLOOD) {
+            confidence_threshold = 0.4; // Even lower for SYN floods
+        }
+        
+        if (attack_info.confidence >= confidence_threshold) {
             incrementAttackCounter(attack_info.type);
             
             // Progressive blocking based on severity
@@ -370,7 +388,7 @@ static const InspectApi ddos_api =
         mod_ctor,
         mod_dtor
     },
-    IT_PROBE,
+    IT_PACKET,  // Changed from IT_PROBE to IT_PACKET
     PROTO_BIT__ANY_IP,
     nullptr, // buffers
     nullptr, // service

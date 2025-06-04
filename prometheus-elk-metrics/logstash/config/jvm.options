@@ -1,0 +1,32 @@
+## JVM configuration for Logstash
+
+# Xms represents the initial size of total heap space
+# Xmx represents the maximum size of total heap space
+-Xms1g
+-Xmx1g
+
+# Use G1 garbage collector for better performance
+-XX:+UseG1GC
+
+# Set the number of GC threads
+-XX:ConcGCThreads=2
+-XX:ParallelGCThreads=2
+
+# Disable swapping
+-Xss1m
+
+# Force the JVM to use IPv4 stack
+-Djava.net.preferIPv4Stack=true
+
+# Disable assertions
+-da
+
+# Pre-touch memory pages used by the JVM during initialization
+-XX:+AlwaysPreTouch
+
+# Heap dumps
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=/usr/share/logstash/logs/
+
+# Exit the JVM on OOM
+-XX:+ExitOnOutOfMemoryError

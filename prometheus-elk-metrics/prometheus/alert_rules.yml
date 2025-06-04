@@ -29,7 +29,7 @@ groups:
       component: ddos_inspector
     annotations:
       summary: "High packet drop rate"
-      description: "{{ $value | humanizePercentage }} of packets are being blocked"
+      description: "{{ printf \"%.2f%%\" $value }} of packets are being blocked (ratio: {{ $value }})"
 
   - alert: LowEntropy
     expr: ddos_inspector_entropy < 1.5
@@ -39,7 +39,7 @@ groups:
       component: ddos_inspector
     annotations:
       summary: "Low traffic entropy detected"
-      description: "Traffic entropy is {{ $value }}, which may indicate an ongoing attack"
+      description: "Traffic entropy is {{ printf \"%.2f\" $value }}, which may indicate an ongoing attack"
 
   - alert: HighDetectionLatency
     expr: ddos_inspector_detection_time_ms > 50
@@ -49,7 +49,7 @@ groups:
       component: ddos_inspector
     annotations:
       summary: "High detection latency"
-      description: "DDoS detection is taking {{ $value }}ms, which is above the 50ms threshold"
+      description: "DDoS detection is taking {{ printf \"%.1f\" $value }}ms, which is above the 50ms threshold"
 
 - name: snort_performance_alerts
   rules:
@@ -61,17 +61,17 @@ groups:
       component: snort
     annotations:
       summary: "Snort high CPU usage"
-      description: "Snort CPU usage is {{ $value }}% for more than 5 minutes"
+      description: "Snort CPU usage is {{ printf \"%.1f%%\" $value }} for more than 5 minutes"
 
   - alert: SnortHighMemoryUsage
-    expr: snort_memory_usage_bytes > 2147483648  # 2GB
+    expr: snort_memory_usage_bytes / 1048576 > 2048  # 2GB in MB
     for: 5m
     labels:
       severity: warning
       component: snort
     annotations:
       summary: "Snort high memory usage"
-      description: "Snort memory usage is {{ $value | humanizeBytes }} for more than 5 minutes"
+      description: "Snort memory usage is {{ printf \"%.1f MB\" $value }} for more than 5 minutes"
 
   - alert: SnortPacketDrop
     expr: rate(snort_interface_packets_dropped_total[5m]) > 100
@@ -81,7 +81,7 @@ groups:
       component: snort
     annotations:
       summary: "High packet drop rate in Snort"
-      description: "Snort is dropping {{ $value }} packets per second"
+      description: "Snort is dropping {{ printf \"%.1f\" $value }} packets per second"
 
 - name: system_alerts
   rules:
@@ -93,7 +93,7 @@ groups:
       component: firewall
     annotations:
       summary: "Large number of blocked IPs"
-      description: "{{ $value }} IP addresses are currently blocked by the firewall"
+      description: "{{ printf \"%.0f\" $value }} IP addresses are currently blocked by the firewall"
 
   - alert: HighConnectionCount
     expr: ddos_inspector_active_connections > 10000
@@ -103,7 +103,7 @@ groups:
       component: connection_tracker
     annotations:
       summary: "High number of active connections"
-      description: "{{ $value }} active connections are being tracked"
+      description: "{{ printf \"%.0f\" $value }} active connections are being tracked"
 
   - alert: MetricsExporterDown
     expr: up{job="ddos-inspector"} == 0

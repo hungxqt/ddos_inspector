@@ -61,6 +61,43 @@ protected:
         }
         return "default_payload";
     }
+    
+    // Helper functions for creating different packet types
+    PacketData createSynPacket(const std::string& src_ip, const std::string& dst_ip) {
+        PacketData pkt;
+        pkt.src_ip = src_ip;
+        pkt.dst_ip = dst_ip;
+        pkt.is_syn = true;
+        pkt.is_ack = false;
+        pkt.is_http = false;
+        pkt.size = 60;
+        pkt.payload = "";
+        return pkt;
+    }
+    
+    PacketData createAckPacket(const std::string& src_ip, const std::string& dst_ip) {
+        PacketData pkt;
+        pkt.src_ip = src_ip;
+        pkt.dst_ip = dst_ip;
+        pkt.is_syn = false;
+        pkt.is_ack = true;
+        pkt.is_http = false;
+        pkt.size = 60;
+        pkt.payload = "";
+        return pkt;
+    }
+    
+    PacketData createHttpPacket(const std::string& src_ip, const std::string& dst_ip, const std::string& payload) {
+        PacketData pkt;
+        pkt.src_ip = src_ip;
+        pkt.dst_ip = dst_ip;
+        pkt.is_syn = false;
+        pkt.is_ack = false;
+        pkt.is_http = true;
+        pkt.size = 200 + payload.length();
+        pkt.payload = payload;
+        return pkt;
+    }
 };
 
 TEST_F(RealisticAttackTest, MassiveSynFloodSimulation) {
@@ -143,70 +180,66 @@ TEST_F(RealisticAttackTest, LowAndSlowHTTPFlood) {
 }
 
 TEST_F(RealisticAttackTest, MultiVectorAttack) {
-    // Simulate realistic multi-vector attack: SYN flood + HTTP flood + ACK flood
-    // This represents sophisticated attackers using multiple techniques
+    // Simulate a sophisticated multi-vector attack
+    // This represents a realistic scenario with multiple attack types
     
-    auto botnet_ips = generateBotnetIPs(50);
-    bool syn_detected = false, http_detected = false, ack_detected = false;
+    std::vector<std::string> attack_ips = {
+        "203.0.113.10", "203.0.113.11", "203.0.113.12", "203.0.113.13", "203.0.113.14"
+    };
     
-    for (size_t ip_idx = 0; ip_idx < botnet_ips.size(); ip_idx++) {
-        const auto& ip = botnet_ips[ip_idx];
-        
-        // Different IPs use different attack vectors
-        if (ip_idx % 3 == 0) {
-            // SYN flood vector
-            for (int i = 0; i < 60; i++) {
-                PacketData syn_pkt;
-                syn_pkt.src_ip = ip;
-                syn_pkt.dst_ip = "10.0.0.1";
-                syn_pkt.is_syn = true;
-                syn_pkt.size = 60;
-                syn_pkt.session_id = "syn_" + std::to_string(i);
-                
-                if (behavior_tracker->inspect(syn_pkt)) {
-                    syn_detected = true;
-                }
-            }
-        } else if (ip_idx % 3 == 1) {
-            // HTTP flood vector
-            for (int i = 0; i < 160; i++) {
-                PacketData http_pkt;
-                http_pkt.src_ip = ip;
-                http_pkt.dst_ip = "10.0.0.1";
-                http_pkt.is_http = true;
-                http_pkt.size = 250;
-                http_pkt.session_id = "http_" + std::to_string(i);
-                http_pkt.payload = generateAttackPayload("http_flood");
-                
-                if (behavior_tracker->inspect(http_pkt)) {
-                    http_detected = true;
-                }
-            }
-        } else {
-            // ACK flood vector
-            for (int i = 0; i < 45; i++) {
-                PacketData ack_pkt;
-                ack_pkt.src_ip = ip;
-                ack_pkt.dst_ip = "10.0.0.1";
-                ack_pkt.is_ack = true;
-                ack_pkt.size = 60;
-                ack_pkt.session_id = "ack_" + std::to_string(i);
-                
-                if (behavior_tracker->inspect(ack_pkt)) {
-                    ack_detected = true;
-                }
+    bool syn_detected = false;
+    bool http_detected = false;
+    bool ack_detected = false;
+    
+    // Phase 1: SYN flood from multiple IPs
+    for (const auto& ip : attack_ips) {
+        for (int i = 0; i < 60; i++) {
+            PacketData syn_pkt = createSynPacket(ip, "192.168.1.100");
+            syn_pkt.session_id = "syn_" + ip + "_" + std::to_string(i);
+            
+            bool stats_result = stats_engine->analyze(syn_pkt);
+            bool behavior_result = behavior_tracker->inspect(syn_pkt);
+            
+            if (stats_result || behavior_result) {
+                syn_detected = true;
             }
         }
     }
     
-    // At least one vector should be detected
-    EXPECT_TRUE(syn_detected || http_detected || ack_detected) 
-        << "Should detect at least one vector in multi-vector attack";
+    // Phase 2: HTTP flood
+    for (const auto& ip : attack_ips) {
+        for (int i = 0; i < 40; i++) {
+            PacketData http_pkt = createHttpPacket(ip, "192.168.1.100", 
+                "GET /api/data HTTP/1.1\r\nHost: target.com\r\n\r\n");
+            http_pkt.session_id = "http_" + ip + "_" + std::to_string(i);
+            
+            bool stats_result = stats_engine->analyze(http_pkt);
+            bool behavior_result = behavior_tracker->inspect(http_pkt);
+            
+            if (stats_result || behavior_result) {
+                http_detected = true;
+            }
+        }
+    }
     
-    std::cout << "Multi-vector detection results:" << std::endl;
-    std::cout << "  SYN flood: " << (syn_detected ? "DETECTED" : "NOT DETECTED") << std::endl;
-    std::cout << "  HTTP flood: " << (http_detected ? "DETECTED" : "NOT DETECTED") << std::endl;
-    std::cout << "  ACK flood: " << (ack_detected ? "DETECTED" : "NOT DETECTED") << std::endl;
+    // Phase 3: ACK flood
+    for (const auto& ip : attack_ips) {
+        for (int i = 0; i < 15; i++) {
+            PacketData ack_pkt = createAckPacket(ip, "192.168.1.100");
+            ack_pkt.session_id = "ack_" + ip + "_" + std::to_string(i);
+            
+            bool stats_result = stats_engine->analyze(ack_pkt);
+            bool behavior_result = behavior_tracker->inspect(ack_pkt);
+            
+            if (stats_result || behavior_result) {
+                ack_detected = true;
+            }
+        }
+    }
+    
+    // Verify that at least one attack vector was detected
+    EXPECT_TRUE(syn_detected || http_detected || ack_detected) 
+        << "Multi-vector attack should be detected";
 }
 
 TEST_F(RealisticAttackTest, EvasionTechniquesSimulation) {

@@ -18,14 +18,6 @@ receivers:
 - name: 'email-alerts'
   email_configs:
   - to: 'admin@your-domain.com'
-    subject: 'DDoS Inspector Alert: {{ .GroupLabels.alertname }}'
-    body: |
-      {{ range .Alerts }}
-      Alert: {{ .Annotations.summary }}
-      Description: {{ .Annotations.description }}
-      Instance: {{ .Labels.instance }}
-      Severity: {{ .Labels.severity }}
-      {{ end }}
 
 inhibit_rules:
   - source_match:

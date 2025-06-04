@@ -13,13 +13,17 @@
     ]
   },
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": null,
+  "id": 1,
   "links": [],
+  "liveNow": false,
   "panels": [
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -89,15 +93,15 @@
       },
       "targets": [
         {
-          "expr": "rate(ddos_inspector_packets_total[5m])",
+          "expr": "rate(ddos_inspector_packets_processed_total[5m])",
           "interval": "",
           "legendFormat": "Packets/sec",
           "refId": "A"
         },
         {
-          "expr": "rate(ddos_inspector_bytes_total[5m])",
+          "expr": "ddos_inspector_packet_rate",
           "interval": "",
-          "legendFormat": "Bytes/sec",
+          "legendFormat": "Current Rate",
           "refId": "B"
         }
       ],
@@ -105,7 +109,10 @@
       "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -155,9 +162,9 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "ddos_inspector_attacks_detected_total",
+          "expr": "ddos_inspector_syn_floods_total + ddos_inspector_slowloris_attacks_total + ddos_inspector_udp_floods_total + ddos_inspector_icmp_floods_total",
           "interval": "",
-          "legendFormat": "Attacks Detected",
+          "legendFormat": "Total Attacks",
           "refId": "A"
         }
       ],
@@ -165,7 +172,10 @@
       "type": "gauge"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -208,17 +218,38 @@
       },
       "targets": [
         {
-          "expr": "ddos_inspector_attacks_by_type_total",
+          "expr": "ddos_inspector_syn_floods_total",
           "interval": "",
-          "legendFormat": "{{attack_type}}",
+          "legendFormat": "SYN Floods",
           "refId": "A"
+        },
+        {
+          "expr": "ddos_inspector_slowloris_attacks_total",
+          "interval": "",
+          "legendFormat": "Slowloris",
+          "refId": "B"
+        },
+        {
+          "expr": "ddos_inspector_udp_floods_total",
+          "interval": "",
+          "legendFormat": "UDP Floods",
+          "refId": "C"
+        },
+        {
+          "expr": "ddos_inspector_icmp_floods_total",
+          "interval": "",
+          "legendFormat": "ICMP Floods",
+          "refId": "D"
         }
       ],
       "title": "Attack Types Distribution",
       "type": "piechart"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -289,15 +320,15 @@
       },
       "targets": [
         {
-          "expr": "ddos_inspector_detection_latency_seconds * 1000",
+          "expr": "ddos_inspector_detection_time_ms",
           "interval": "",
-          "legendFormat": "Detection Latency",
+          "legendFormat": "Detection Time",
           "refId": "A"
         },
         {
-          "expr": "ddos_inspector_mitigation_latency_seconds * 1000",
+          "expr": "ddos_inspector_entropy",
           "interval": "",
-          "legendFormat": "Mitigation Latency",
+          "legendFormat": "Network Entropy",
           "refId": "B"
         }
       ],
@@ -305,7 +336,10 @@
       "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -375,18 +409,24 @@
       },
       "targets": [
         {
-          "expr": "topk(10, ddos_inspector_blocked_ips_total)",
+          "expr": "ddos_inspector_blocked_ips",
           "interval": "",
-          "legendFormat": "{{src_ip}}",
+          "legendFormat": "Blocked IPs",
           "refId": "A"
+        },
+        {
+          "expr": "ddos_inspector_active_connections",
+          "interval": "",
+          "legendFormat": "Active Connections",
+          "refId": "B"
         }
       ],
-      "title": "Top Blocked Source IPs",
+      "title": "Network Status",
       "type": "timeseries"
     }
   ],
   "refresh": "5s",
-  "schemaVersion": 27,
+  "schemaVersion": 39,
   "style": "dark",
   "tags": [
     "ddos",
@@ -404,5 +444,6 @@
   "timezone": "",
   "title": "DDoS Inspector Monitoring",
   "uid": "ddos-inspector",
-  "version": 1
+  "version": 1,
+  "weekStart": ""
 }

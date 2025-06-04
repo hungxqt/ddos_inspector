@@ -36,59 +36,68 @@ bool StatsEngine::analyze(const PacketData& pkt) {
     // Compute entropy for the payload - context-aware
     current_entropy = compute_entropy(pkt.payload);
     
+    // Special handling for SYN packets which naturally have zero entropy
+    bool is_syn_packet = pkt.is_syn && !pkt.is_ack;
+    
     // Update EWMA for this source IP
     update_ewma(pkt.src_ip, current_rate);
     
     // Enhanced anomaly detection with adaptive thresholds
     double anomaly_score = 0.0;
     
-    // 1. Context-aware entropy detection - but keep compatibility with tests
-    double entropy_threshold_adaptive = get_adaptive_entropy_threshold(pkt);
-    if (current_entropy < entropy_threshold_adaptive) {
-        anomaly_score += 0.3;
+    // 1. Context-aware entropy detection - skip for SYN packets
+    if (!is_syn_packet) {
+        double entropy_threshold_adaptive = get_adaptive_entropy_threshold(pkt);
+        if (current_entropy < entropy_threshold_adaptive * 0.5) {  // Only detect extremely low entropy
+            anomaly_score += 0.3;
+        }
+        
+        // Simple fallback for very low entropy - skip for SYN packets
+        if (current_entropy < 0.2) {  // Reduced from 0.5 to 0.2 - only truly repetitive content
+            anomaly_score += 0.4;
+        }
     }
     
-    // 2. Simple fallback for very low entropy (maintains test compatibility)
-    if (current_entropy < 0.5) {  // Original simple threshold
+    // 2. Rate detection - more sensitive for SYN packets
+    double rate_multiplier = current_rate / std::max(baseline_rate, 1000.0); // Reduced minimum baseline for SYN detection
+    if (is_syn_packet && rate_multiplier > 5.0) { // Lower threshold for SYN packets
+        anomaly_score += 0.5;
+    } else if (rate_multiplier > 50.0) { // Original threshold for other packets
         anomaly_score += 0.4;
-    }
-    
-    // 3. Adaptive rate detection based on baseline
-    double rate_multiplier = current_rate / std::max(baseline_rate, 1000.0); // Minimum baseline
-    if (rate_multiplier > 10.0) { // Current rate is 10x baseline
-        anomaly_score += 0.4;
-    } else if (rate_multiplier > 5.0) { // Current rate is 5x baseline
+    } else if (rate_multiplier > 20.0) {
         anomaly_score += 0.2;
     }
     
-    // 4. Legacy high rate detection for test compatibility
-    if (current_rate > 50000.0) { // Original threshold
+    // 3. Legacy high rate detection - lower for SYN packets
+    if (is_syn_packet && current_rate > 10000.0) { // Much lower threshold for SYN packets
+        anomaly_score += 0.4;
+    } else if (current_rate > 500000.0) { // Original threshold for other packets
         anomaly_score += 0.3;
     }
     
-    // 5. Payload size anomaly detection
-    if (pkt.size > 1500 && current_entropy < 0.3) {
-        anomaly_score += 0.3; // Large packets with very low entropy
+    // 4. Payload size anomaly detection - more restrictive
+    if (pkt.size > 1500 && current_entropy < 0.1) {  // Reduced from 0.3 to 0.1
+        anomaly_score += 0.3; // Large packets with extremely low entropy only
     }
     
-    // 6. Protocol-specific anomalies
+    // 5. Protocol-specific anomalies - more restrictive for HTTP
     if (pkt.is_http) {
-        // HTTP-specific checks
-        if (pkt.payload.length() < 20 && pkt.payload.find("GET") == 0) {
-            anomaly_score += 0.2; // Suspiciously short HTTP requests
+        // HTTP-specific checks - only flag truly suspicious patterns
+        if (pkt.payload.length() < 10 && pkt.payload.find("GET") == 0) {  // Reduced from 20 to 10
+            anomaly_score += 0.2; // Only extremely short HTTP requests
         }
-        if (std::count(pkt.payload.begin(), pkt.payload.end(), '\n') > 50) {
-            anomaly_score += 0.3; // Too many newlines in HTTP request
+        if (std::count(pkt.payload.begin(), pkt.payload.end(), '\n') > 100) {  // Increased from 50 to 100
+            anomaly_score += 0.3; // Only excessive newlines
         }
     }
     
-    // 7. Repetitive payload detection
+    // 6. Repetitive payload detection - keep as is but require higher overall score
     if (is_repetitive_payload(pkt.payload)) {
         anomaly_score += 0.3;
     }
     
-    // Return anomaly if score exceeds threshold (lowered for test compatibility)
-    return anomaly_score >= 0.4; // 40% confidence threshold instead of 50%
+    // Increase threshold significantly to reduce false positives during normal usage
+    return anomaly_score >= 0.7; // Increased from 0.4 to 0.7 - require much higher confidence
 }
 
 double StatsEngine::compute_entropy(const std::string& payload) {
@@ -141,7 +150,7 @@ bool StatsEngine::is_repetitive_payload(const std::string& payload) {
         pattern_counts[pattern]++;
         
         // If any 4-byte pattern repeats more than 25% of the payload
-        if (pattern_counts[pattern] > payload.length() / 4) {
+        if (static_cast<size_t>(pattern_counts[pattern]) > payload.length() / 4) {
             return true;
         }
     }

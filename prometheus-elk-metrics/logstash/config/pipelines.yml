@@ -1,0 +1,11 @@
+- pipeline.id: snort
+  path.config: "/usr/share/logstash/pipeline/snort.conf"
+  pipeline.workers: 1
+  pipeline.batch.size: 125
+  pipeline.batch.delay: 50
+
+- pipeline.id: logstash
+  path.config: "/usr/share/logstash/pipeline/logstash.conf"
+  pipeline.workers: 1
+  pipeline.batch.size: 125
+  pipeline.batch.delay: 50

@@ -49,9 +49,15 @@ class SnortStatsExporter:
     def get_snort_process(self):
         """Find the Snort process"""
         try:
+            # First try to find Snort in host processes (when running with pid: host)
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 if proc.info['name'] and 'snort' in proc.info['name'].lower():
                     return psutil.Process(proc.info['pid'])
+                # Also check command line for snort processes
+                if proc.info['cmdline']:
+                    cmdline_str = ' '.join(proc.info['cmdline']).lower()
+                    if 'snort' in cmdline_str and not 'grep' in cmdline_str:
+                        return psutil.Process(proc.info['pid'])
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
         return None
@@ -73,7 +79,7 @@ class SnortStatsExporter:
                 uptime = time.time() - create_time
                 self.snort_uptime.set(uptime)
                 
-                logger.info(f"Snort process metrics - CPU: {cpu_percent}%, Memory: {memory_info.rss / 1024 / 1024:.1f}MB, Uptime: {uptime:.0f}s")
+                # logger.info(f"Snort process metrics - CPU: {cpu_percent}%, Memory: {memory_info.rss / 1024 / 1024:.1f}MB, Uptime: {uptime:.0f}s")
                 
             except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
                 logger.warning(f"Could not collect process metrics: {e}")
@@ -190,20 +196,20 @@ class SnortStatsExporter:
                                     logger.debug(f"Could not parse rule file {file}: {e}")
             
             self.active_rules.set(total_rules)
-            logger.info(f"Active Snort rules: {total_rules}")
+            # logger.info(f"Active Snort rules: {total_rules}")
             
         except Exception as e:
             logger.debug(f"Could not collect rule statistics: {e}")
     
     def collect_all_metrics(self):
         """Collect all metrics"""
-        logger.info("Collecting Snort metrics...")
+        # logger.info("Collecting Snort metrics...")
         
         self.collect_process_metrics()
         self.parse_snort_stats()
         self.collect_rule_stats()
         
-        logger.info("Metrics collection completed")
+        # logger.info("Metrics collection completed")
     
     def start_server(self):
         """Start the Prometheus metrics server"""
