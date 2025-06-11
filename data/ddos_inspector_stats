@@ -1,11 +1,11 @@
-packets_processed:15147
+packets_processed:2565
 packets_blocked:0
 entropy:0
-rate:398.851
-connections:3
+rate:3380.27
+connections:28
 blocked_ips:0
-syn_floods:1654
-slowloris_attacks:1658
+syn_floods:0
+slowloris_attacks:0
 udp_floods:0
 icmp_floods:0
 detection_time:0

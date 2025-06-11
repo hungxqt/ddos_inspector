@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(ddos_inspector VERSION 1.0.0 LANGUAGES CXX)
 
+# Use GNUInstallDirs for standard installation paths
+include(GNUInstallDirs)
+
 # Set C++ standard to C++20 for modern features and compatibility with Snort 3.8.1.0
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,16 +15,6 @@ enable_testing()
 # Include CDash support
 include(CTest)
 
-# Compiler-specific optimizations
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(
-        -Wall -Wextra -Wpedantic
-        -Wno-unused-parameter
-        -fPIC
-        -fvisibility=hidden
-    )
-endif()
-
 # Build type specific flags
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native -flto")
@@ -30,31 +23,34 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native -flto")
 find_package(Threads REQUIRED)
 find_package(PkgConfig QUIET)
 
-# Configure Snort 3 paths - support both environment variable and default
-if(DEFINED ENV{SNORT3_INCLUDE_DIR})
-    set(SNORT3_INCLUDE_DIR $ENV{SNORT3_INCLUDE_DIR})
-else()
-    set(SNORT3_INCLUDE_DIR "/usr/local/snort3/include/snort")
-endif()
-
-# Verify Snort 3 installation
-if(EXISTS ${SNORT3_INCLUDE_DIR})
-    message(STATUS "Found Snort 3 headers at: ${SNORT3_INCLUDE_DIR}")
-    
-    # Check for specific Snort 3.8.1.0 headers to ensure compatibility
-    if(EXISTS "${SNORT3_INCLUDE_DIR}/framework/snort_api.h")
-        message(STATUS "Snort 3 API headers found - build should be compatible")
+# Function to find Snort 3 installation
+function(find_snort3)
+    # Configure Snort 3 paths - support both environment variable and default
+    if(DEFINED ENV{SNORT3_INCLUDE_DIR})
+        set(SNORT3_INCLUDE_DIR $ENV{SNORT3_INCLUDE_DIR} PARENT_SCOPE)
+        set(SNORT3_INCLUDE_DIR_LOCAL $ENV{SNORT3_INCLUDE_DIR})
     else()
-        message(WARNING "Snort 3 API headers missing - build may fail")
+        set(SNORT3_INCLUDE_DIR "/usr/local/snort3/include/snort" PARENT_SCOPE)
+        set(SNORT3_INCLUDE_DIR_LOCAL "/usr/local/snort3/include/snort")
     endif()
     
-    include_directories(${SNORT3_INCLUDE_DIR})
-else()
-    message(FATAL_ERROR "Snort 3 headers not found at ${SNORT3_INCLUDE_DIR}. Please install Snort 3.8.1.0 or set SNORT3_INCLUDE_DIR")
-endif()
+    # Verify Snort 3 installation
+    if(EXISTS ${SNORT3_INCLUDE_DIR_LOCAL})
+        message(STATUS "Found Snort 3 headers at: ${SNORT3_INCLUDE_DIR_LOCAL}")
+        
+        # Check for specific Snort 3.8.1.0 headers to ensure compatibility
+        if(EXISTS "${SNORT3_INCLUDE_DIR_LOCAL}/framework/snort_api.h")
+            message(STATUS "Snort 3 API headers found - build should be compatible")
+        else()
+            message(WARNING "Snort 3 API headers missing - build may fail")
+        endif()
+    else()
+        message(FATAL_ERROR "Snort 3 headers not found at ${SNORT3_INCLUDE_DIR_LOCAL}. Please install Snort 3.8.1.0 or set SNORT3_INCLUDE_DIR environment variable")
+    endif()
+endfunction()
 
-# Include project headers
-include_directories(include)
+# Find Snort 3
+find_snort3()
 
 # Collect source files
 file(GLOB SOURCES "src/*.cpp")
@@ -62,16 +58,66 @@ list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/ddos_inspector.cpp")
 
 # Core library for shared functionality
 add_library(ddos_core STATIC ${SOURCES})
-target_link_libraries(ddos_core Threads::Threads)
 
-# Add TESTING definition to core library when building tests
-if(BUILD_TESTING)
-    target_compile_definitions(ddos_core PRIVATE TESTING)
-endif()
+# Set target properties for core library
+target_include_directories(ddos_core
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${SNORT3_INCLUDE_DIR}
+)
+
+target_compile_definitions(ddos_core
+    PRIVATE
+        _GLIBCXX_USE_CXX11_ABI=1
+        $<$<BOOL:${BUILD_TESTING}>:TESTING>
+)
+
+target_compile_options(ddos_core
+    PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:
+            -Wall -Wextra -Wpedantic
+            -Wno-unused-parameter
+            -fPIC
+            -fvisibility=hidden
+        >
+)
+
+target_link_libraries(ddos_core 
+    PUBLIC 
+        Threads::Threads
+)
 
 # Main Snort 3 plugin
 add_library(ddos_inspector SHARED src/ddos_inspector.cpp)
-target_link_libraries(ddos_inspector ddos_core Threads::Threads)
+
+target_include_directories(ddos_inspector
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${SNORT3_INCLUDE_DIR}
+)
+
+target_compile_definitions(ddos_inspector 
+    PRIVATE
+        _GLIBCXX_USE_CXX11_ABI=1
+        SO_PUBLIC=
+)
+
+target_compile_options(ddos_inspector 
+    PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:
+            -Wall -Wextra -Wpedantic
+            -Wno-unused-parameter
+            -fvisibility=default
+        >
+)
+
+target_link_libraries(ddos_inspector 
+    PRIVATE 
+        ddos_core
+        Threads::Threads
+)
 
 # Plugin properties for Snort 3.8.1.0 compatibility
 set_target_properties(ddos_inspector PROPERTIES
@@ -81,10 +127,6 @@ set_target_properties(ddos_inspector PROPERTIES
     CXX_VISIBILITY_PRESET default
     POSITION_INDEPENDENT_CODE ON
 )
-
-# Ensure plugin symbols are properly exported for Snort
-target_compile_definitions(ddos_inspector PRIVATE SO_PUBLIC=)
-target_compile_options(ddos_inspector PRIVATE -fvisibility=default)
 
 # Install plugin to Snort directory
 install(TARGETS ddos_inspector 
@@ -113,42 +155,43 @@ if(BUILD_TESTING)
         FetchContent_MakeAvailable(googletest)
     endif()
 
-    # Main unit tests executable
-    add_executable(unit_tests tests/unit_tests.cpp)
-    target_link_libraries(unit_tests ddos_core gtest gtest_main Threads::Threads)
-    target_compile_definitions(unit_tests PRIVATE TESTING)
-    add_test(NAME AllTests COMMAND unit_tests)
+    # Function to create test targets
+    function(add_component_test test_name source_file)
+        add_executable(${test_name} ${source_file})
+        target_link_libraries(${test_name} 
+            PRIVATE 
+                ddos_core 
+                gtest 
+                gtest_main 
+                Threads::Threads
+        )
+        target_compile_definitions(${test_name} PRIVATE TESTING)
+        add_test(NAME ${test_name} COMMAND ${test_name})
+    endfunction()
 
-    # Individual component test executables
-    add_executable(test_stats_engine tests/test_stats_engine.cpp)
-    target_link_libraries(test_stats_engine ddos_core gtest gtest_main Threads::Threads)
-    target_compile_definitions(test_stats_engine PRIVATE TESTING)
-    add_test(NAME StatsEngineTests COMMAND test_stats_engine)
+    # Create test executables
+    add_component_test(unit_tests tests/unit_tests.cpp)
+    add_component_test(test_stats_engine tests/test_stats_engine.cpp)
+    add_component_test(test_behavior_tracker tests/test_behavior_tracker.cpp)
+    add_component_test(test_firewall_action tests/test_firewall_action.cpp)
 
-    add_executable(test_behavior_tracker tests/test_behavior_tracker.cpp)
-    target_link_libraries(test_behavior_tracker ddos_core gtest gtest_main Threads::Threads)
-    target_compile_definitions(test_behavior_tracker PRIVATE TESTING)
-    add_test(NAME BehaviorTrackerTests COMMAND test_behavior_tracker)
-
-    add_executable(test_firewall_action tests/test_firewall_action.cpp)
-    target_link_libraries(test_firewall_action ddos_core gtest gtest_main Threads::Threads)
-    target_compile_definitions(test_firewall_action PRIVATE TESTING)
-    add_test(NAME FirewallActionTests COMMAND test_firewall_action)
-
-    # Realistic attack simulation tests
+    # Realistic attack simulation tests (conditional)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realistic_attacks.cpp")
-        add_executable(test_realistic_attacks tests/test_realistic_attacks.cpp)
-        target_link_libraries(test_realistic_attacks ddos_core gtest gtest_main Threads::Threads)
-        target_compile_definitions(test_realistic_attacks PRIVATE TESTING)
-        add_test(NAME RealisticAttackTests COMMAND test_realistic_attacks)
+        add_component_test(test_realistic_attacks tests/test_realistic_attacks.cpp)
     endif()
+
+    # Add test aliases for convenience
+    add_test(NAME AllTests COMMAND unit_tests)
+    add_test(NAME StatsEngineTests COMMAND test_stats_engine)
+    add_test(NAME BehaviorTrackerTests COMMAND test_behavior_tracker)
+    add_test(NAME FirewallActionTests COMMAND test_firewall_action)
 endif()
 
 # Package configuration
 set(CPACK_PACKAGE_NAME "ddos-inspector")
 set(CPACK_PACKAGE_VERSION "1.0.0")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Advanced DDoS Inspector Plugin for Snort 3.8.1.0")
-set(CPACK_PACKAGE_VENDOR "DDoS Inspector Team")
+set(CPACK_PACKAGE_VENDOR "ADHHP Team")
 set(CPACK_GENERATOR "DEB;RPM;TGZ")
 
 include(CPack)
@@ -160,5 +203,5 @@ message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Snort 3 Include: ${SNORT3_INCLUDE_DIR}")
 message(STATUS "  Testing: ${BUILD_TESTING}")
-message(STATUS "  Install on: ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "  Install Prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "")

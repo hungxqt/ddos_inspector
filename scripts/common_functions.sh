@@ -11,23 +11,23 @@ NC='\033[0m' # No Color
 
 # Print utility functions
 print_status() {
-    echo -e "${GREEN}✅${NC} $1"
+    echo -e "${GREEN}[OK]${NC} $1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠️${NC}  $1"
+    echo -e "${YELLOW}[WARNING]${NC}  $1"
 }
 
 print_error() {
-    echo -e "${RED}❌${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
 print_info() {
-    echo -e "${BLUE}🔍${NC} $1"
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
 print_success() {
-    echo -e "${GREEN}🎉${NC} $1"
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
 # Privilege checking

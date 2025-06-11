@@ -9,6 +9,12 @@ export NETWORK_INTERFACE="${NETWORK_INTERFACE:-eth0}"
 export PLUGIN_PATH="${PLUGIN_PATH:-/usr/local/lib/snort3_extra_plugins}"
 export CONFIG_FILE="${CONFIG_FILE:-/etc/snort/snort_ddos_config.lua}"
 
+# Colors for better output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
 # Function to detect available network interface
 detect_interface() {
     local interface
@@ -50,7 +56,7 @@ mkdir -p /var/run
 chown -R snort:snort /var/log/snort
 
 # Setup nftables infrastructure for DDoS protection
-echo "🛡️  Setting up firewall infrastructure..."
+echo -e "${BLUE}Setting up firewall infrastructure...${NC}"
 
 # Create nftables table and set for IP blocking (auto-creates if missing)
 nft add table inet filter 2>/dev/null || true
@@ -59,9 +65,9 @@ nft add rule inet filter input ip saddr @ddos_ip_set drop 2>/dev/null || true
 
 # Verify setup
 if nft list set inet filter ddos_ip_set >/dev/null 2>&1; then
-    echo "✅ Firewall infrastructure ready for DDoS protection"
+    echo -e "${GREEN}Firewall infrastructure ready for DDoS protection${NC}"
 else
-    echo "⚠️  Warning: Could not set up nftables (may need --privileged flag)"
+    echo -e "${YELLOW}Warning: Could not set up nftables (may need --privileged flag)${NC}"
 fi
 
 # Mark as initialized for this container session
@@ -78,9 +84,9 @@ export NETWORK_INTERFACE="$DETECTED_INTERFACE"
 echo "Starting Snort with DDoS Inspector..."
 echo "Plugin path: $PLUGIN_PATH"
 echo "Config file: $CONFIG_FILE"
-echo "🔍 NETWORK MONITORING ACTIVE"
-echo "📡 Interface being monitored: $NETWORK_INTERFACE"
-echo "🛡️  DDoS protection enabled on: $NETWORK_INTERFACE"
+echo -e "${BLUE}NETWORK MONITORING ACTIVE${NC}"
+echo -e "${GREEN}Interface being monitored: $NETWORK_INTERFACE${NC}"
+echo -e "${YELLOW}DDoS protection enabled on: $NETWORK_INTERFACE${NC}"
 
 # Show available plugins for debugging
 echo "Available plugins:"

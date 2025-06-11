@@ -8,7 +8,14 @@ TARGET_PORT=${2:-"80"}
 DURATION=${3:-"30"}
 INTENSITY=${4:-"high"}
 
-echo "🚀 Starting Enhanced SYN Flood Attack"
+# Colors for better output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}[ATTACK] Starting Enhanced SYN Flood Attack${NC}"
 echo "Target: $TARGET_IP:$TARGET_PORT"
 echo "Duration: ${DURATION}s"
 echo "Intensity: $INTENSITY"
@@ -32,7 +39,7 @@ case $INTENSITY in
         ;;
 esac
 
-echo "📊 Attack Parameters:"
+echo -e "${BLUE}[STATS] Attack Parameters:${NC}"
 echo "  - Rate: $RATE packets/second"
 echo "  - Parallel processes: $PARALLEL" 
 echo "  - Total packets: $((RATE * DURATION))"
@@ -64,18 +71,18 @@ send_syn_flood() {
 
 # Check if hping3 is installed
 if ! command -v hping3 &> /dev/null; then
-    echo "⚠️  hping3 not found. Installing..."
+    echo -e "${YELLOW}[WARNING] hping3 not found. Installing...${NC}"
     sudo apt-get update && sudo apt-get install -y hping3
 fi
 
 # Check if bc is installed (for calculations)
 if ! command -v bc &> /dev/null; then
-    echo "⚠️  bc not found. Installing..."
+    echo -e "${YELLOW}[WARNING] bc not found. Installing...${NC}"
     sudo apt-get install -y bc
 fi
 
-echo "🎯 Starting SYN flood attack..."
-echo "⏱️  This will run for $DURATION seconds"
+echo -e "${RED}[ATTACK] Starting SYN flood attack...${NC}"
+echo -e "${BLUE}[TIMER] This will run for $DURATION seconds${NC}"
 
 # Start parallel attack processes
 for ((p=1; p<=PARALLEL; p++)); do
@@ -95,12 +102,12 @@ while true; do
     
     # Show progress
     remaining=$((DURATION - elapsed))
-    echo "⏳ Attack in progress... ${remaining}s remaining (sent ~$((RATE * elapsed)) packets)"
+    echo -e "${BLUE}[PROGRESS] Attack in progress... ${remaining}s remaining (sent ~$((RATE * elapsed)) packets)${NC}"
     sleep 2
 done
 
 # Clean up background processes
-echo "🛑 Stopping attack processes..."
+echo -e "${YELLOW}[CLEANUP] Stopping attack processes...${NC}"
 for pid in "${PIDS[@]}"; do
     kill $pid 2>/dev/null || true
 done
@@ -108,11 +115,11 @@ done
 # Kill any remaining hping3 processes
 pkill -f "hping3.*$TARGET_IP" 2>/dev/null || true
 
-echo "✅ SYN flood attack completed"
-echo "📈 Total packets sent: ~$((RATE * DURATION))"
-echo "🔍 Check your DDoS Inspector logs for detection alerts"
+echo -e "${GREEN}[COMPLETE] SYN flood attack completed${NC}"
+echo -e "${BLUE}[STATS] Total packets sent: ~$((RATE * DURATION))${NC}"
+echo -e "${BLUE}[INFO] Check your DDoS Inspector logs for detection alerts${NC}"
 echo ""
-echo "💡 Expected behavior with harder thresholds:"
+echo -e "${GREEN}[EXPECTED] Expected behavior with harder thresholds:${NC}"
 echo "   - Rate-based: Should detect with $RATE pps (need >10 pps)"
 echo "   - Half-open: Should detect if >100 connections remain open"
 

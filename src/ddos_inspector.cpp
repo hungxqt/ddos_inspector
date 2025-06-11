@@ -46,7 +46,7 @@ static const Parameter ddos_params[] =
 
 DdosInspectorModule::DdosInspectorModule() : Module(DDOS_NAME, DDOS_HELP, ddos_params)
 {
-    std::cout << "✅ DDoS Inspector Plugin Module loaded successfully!" << std::endl;
+    std::cout << "\033[0;32m[OK]\033[0m DDoS Inspector Plugin Module loaded successfully!" << std::endl;
 }
 
 const Parameter* DdosInspectorModule::get_parameters() const
@@ -74,13 +74,13 @@ bool DdosInspectorModule::set(const char* fqn, Value& v, SnortConfig*)
 
 bool DdosInspectorModule::begin(const char*, int, SnortConfig*)
 {
-    std::cout << "🔧 DDoS Inspector Plugin configuration initialized" << std::endl;
+    std::cout << "\033[0;34m[CONFIG]\033[0m DDoS Inspector Plugin configuration initialized" << std::endl;
     return true;
 }
 
 bool DdosInspectorModule::end(const char*, int, SnortConfig*)
 {
-    std::cout << "✅ DDoS Inspector Plugin configuration completed successfully" << std::endl;
+    std::cout << "\033[0;32m[OK]\033[0m DDoS Inspector Plugin configuration completed successfully" << std::endl;
     return true;
 }
 
@@ -90,7 +90,7 @@ bool DdosInspectorModule::end(const char*, int, SnortConfig*)
 
 DdosInspector::DdosInspector(DdosInspectorModule* mod)
 {
-    std::cout << "🛡️ DDoS Inspector engine starting with configuration:" << std::endl;
+    std::cout << "\033[0;33m[INIT]\033[0m DDoS Inspector engine starting with configuration:" << std::endl;
     std::cout << "   - Allow ICMP: " << (mod->allow_icmp ? "enabled" : "disabled") << std::endl;
     std::cout << "   - Entropy threshold: " << mod->entropy_threshold << std::endl;
     std::cout << "   - EWMA alpha: " << mod->ewma_alpha << std::endl;
@@ -112,7 +112,7 @@ DdosInspector::DdosInspector(DdosInspectorModule* mod)
     udp_flood_detections = 0;
     icmp_flood_detections = 0;
     
-    std::cout << "🚀 DDoS Inspector engine initialized and ready for packet analysis!" << std::endl;
+    std::cout << "\033[0;32m[READY]\033[0m DDoS Inspector engine initialized and ready for packet analysis!" << std::endl;
 }
 
 DdosInspector::~DdosInspector() = default;
@@ -315,6 +315,9 @@ void DdosInspector::incrementAttackCounter(AttackInfo::Type type) {
             syn_flood_detections++;
             break;
         case AttackInfo::HTTP_FLOOD:
+            // Keep HTTP floods separate from Slowloris
+            // Note: You may want to add a separate http_flood_detections counter
+            break;
         case AttackInfo::SLOWLORIS:
             slowloris_detections++;
             break;

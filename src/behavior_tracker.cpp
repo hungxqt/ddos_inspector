@@ -95,8 +95,8 @@ bool BehaviorTracker::inspect(const PacketData& pkt) {
         detection_score += 2; // Multiple attack patterns increase confidence
     }
     
-    // Lower threshold to reduce false negatives during testing
-    return detection_score >= 3; // Reduced from 6 to 3 - more sensitive detection
+    // Increased threshold to reduce false positives during normal operation
+    return detection_score >= 6; // Increased from 3 to 6 - less sensitive detection for production
 }
 
 void BehaviorTracker::cleanupOldEvents(Behavior& b) {
@@ -133,7 +133,7 @@ void BehaviorTracker::cleanupOldEvents(Behavior& b) {
 
 bool BehaviorTracker::detectSynFlood(const Behavior& b) {
     // Classic SYN flood: too many half-open connections
-    if (b.half_open > 50) return true;  // Reduced from 500 to 50 for testing
+    if (b.half_open > 1000) return true;  // Increased from 200 to 1000 for production use
     
     // Rate-based SYN flood: too many SYN packets in short time
     int syn_count_recent = 0;
@@ -141,12 +141,12 @@ bool BehaviorTracker::detectSynFlood(const Behavior& b) {
     
     for (const auto& event : b.recent_events) {
         auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - event.timestamp);
-        if (duration.count() <= 10 && event.event_type == "SYN") {  // Extended time window to 10 seconds
+        if (duration.count() <= 15 && event.event_type == "SYN") {  // Extended window to 15 seconds
             syn_count_recent++;
         }
     }
     
-    return syn_count_recent > 20; // Reduced from 200 to 20 SYN packets in 10 seconds
+    return syn_count_recent > 500; // Increased from 100 to 500 SYN packets in 15 seconds
 }
 
 bool BehaviorTracker::detectAckFlood(const Behavior& b) {
