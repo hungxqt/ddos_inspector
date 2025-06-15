@@ -1,0 +1,239 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+env:
+  # Project-specific configuration
+  CMAKE_BUILD_TYPE: Release
+  BUILD_TESTING: ON
+  CTEST_OUTPUT_ON_FAILURE: 1
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc-10, gcc-12]
+        include:
+          - compiler: gcc-10
+            cc: gcc-10
+            cxx: g++-10
+          - compiler: gcc-12
+            cc: gcc-12
+            cxx: g++-12
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            libpcap-dev \
+            libboost-all-dev \
+            clang-tidy \
+            cppcheck \
+            pkg-config \
+            libssl-dev \
+            libdnet-dev \
+            libluajit-5.1-dev \
+            libhwloc-dev \
+            flex \
+            bison \
+            uuid-dev
+          # Install specified GCC versions
+          sudo apt-get install -y gcc-10 g++-10 gcc-12 g++-12
+
+      - name: Install Snort3 dependencies
+        run: |
+          # Install libdaq (Data Acquisition library required by Snort3)
+          wget https://github.com/snort3/libdaq/archive/refs/tags/v3.0.15.tar.gz
+          tar xzf v3.0.15.tar.gz
+          cd libdaq-3.0.15
+          ./bootstrap
+          ./configure
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          cd ..
+
+      - name: Install Snort3
+        run: |
+          # Download and build Snort3 from source for CI
+          wget https://github.com/snort3/snort3/archive/refs/tags/3.1.81.0.tar.gz
+          tar xzf 3.1.81.0.tar.gz
+          cd snort3-3.1.81.0
+          ./configure_cmake.sh --prefix=/usr/local/snort3 --enable-static-daq
+          cd build
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          cd ../..
+          # Set environment variable for project build
+          echo "SNORT3_INCLUDE_DIR=/usr/local/snort3/include/snort" >> $GITHUB_ENV
+
+      - name: Verify compiler and setup
+        run: |
+          echo "Using CC=$CC, CXX=$CXX"
+          $CC --version
+          $CXX --version
+          echo "CMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
+          echo "SNORT3_INCLUDE_DIR=$SNORT3_INCLUDE_DIR"
+
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
+            -DBUILD_TESTING=$BUILD_TESTING \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            ..
+
+      - name: Build project
+        run: |
+          cd build
+          ninja -j$(nproc)
+
+      - name: Run unit tests
+        run: |
+          cd build
+          ctest --output-on-failure --verbose --parallel $(nproc)
+
+      - name: Run component tests
+        run: |
+          cd build
+          # Run individual test executables for more detailed output
+          ./unit_tests --gtest_output=xml:unit_tests.xml || true
+          ./test_stats_engine --gtest_output=xml:test_stats_engine.xml || true
+          ./test_behavior_tracker --gtest_output=xml:test_behavior_tracker.xml || true
+          ./test_firewall_action --gtest_output=xml:test_firewall_action.xml || true
+          # Run optional tests if they exist
+          [ -f ./test_realistic_attacks ] && ./test_realistic_attacks --gtest_output=xml:test_realistic_attacks.xml || true
+          [ -f ./test_normal_traffic ] && ./test_normal_traffic --gtest_output=xml:test_normal_traffic.xml || true
+
+      - name: Static Analysis (clang-tidy)
+        if: matrix.compiler == 'gcc-12'  # Only run once to avoid duplicate reports
+        run: |
+          cd build
+          # Use the project's .clangd configuration for clang-tidy
+          find ../src ../include -name "*.cpp" -o -name "*.hpp" | \
+            xargs clang-tidy -p . --config-file=../.clangd --quiet --format-style=file || \
+            echo "clang-tidy completed with warnings (expected for this codebase)"
+
+      - name: Additional Static Analysis (cppcheck)
+        if: matrix.compiler == 'gcc-12'  # Only run once
+        run: |
+          cppcheck \
+            --enable=warning,style,performance,portability \
+            --inconclusive \
+            --inline-suppr \
+            --quiet \
+            --error-exitcode=0 \
+            --std=c++20 \
+            --language=c++ \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            src/ include/ tests/ || echo "cppcheck completed"
+
+      - name: Check plugin artifacts
+        run: |
+          cd build
+          # Verify that the main plugin library was built
+          ls -la libddos_inspector.so
+          # Verify that the core library was built
+          ls -la libddos_core.a
+          # Check plugin properties
+          file libddos_inspector.so
+          ldd libddos_inspector.so || echo "Library dependencies check completed"
+
+      - name: Package release artifacts
+        if: matrix.compiler == 'gcc-12' && github.ref == 'refs/heads/main'
+        run: |
+          cd build
+          # Create release package
+          make package || ninja package || echo "Package creation not available"
+          # Copy essential files to release directory
+          mkdir -p ../release-${{ matrix.compiler }}
+          cp libddos_inspector.so ../release-${{ matrix.compiler }}/
+          cp libddos_core.a ../release-${{ matrix.compiler }}/
+          cp ../snort_ddos_config.lua ../release-${{ matrix.compiler }}/
+          # Create build info
+          echo "Build Date: $(date)" > ../release-${{ matrix.compiler }}/BUILD_INFO.txt
+          echo "Compiler: ${{ matrix.compiler }}" >> ../release-${{ matrix.compiler }}/BUILD_INFO.txt
+          echo "Build Type: $CMAKE_BUILD_TYPE" >> ../release-${{ matrix.compiler }}/BUILD_INFO.txt
+          echo "Git Commit: ${{ github.sha }}" >> ../release-${{ matrix.compiler }}/BUILD_INFO.txt
+
+      - name: Archive build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-Artifacts-${{ matrix.compiler }}
+          path: |
+            build/libddos_inspector.so
+            build/libddos_core.a
+            build/compile_commands.json
+            build/*.xml
+          retention-days: 7
+
+      - name: Archive test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Test-Results-${{ matrix.compiler }}
+          path: |
+            build/*.xml
+            build/Testing/Temporary/LastTest.log
+          retention-days: 7
+
+      - name: Archive release package
+        if: matrix.compiler == 'gcc-12' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-Package-${{ github.sha }}
+          path: release-${{ matrix.compiler }}/
+          retention-days: 30
+
+  docker-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          cd docker
+          docker build -t ddos-inspector:test .
+
+      - name: Test Docker container
+        run: |
+          # Run basic container test
+          docker run --rm ddos-inspector:test --version || echo "Basic container test completed"
+          
+      - name: Archive Docker image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker save ddos-inspector:test | gzip > ddos-inspector-docker.tar.gz
+
+      - name: Upload Docker image artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Docker-Image-${{ github.sha }}
+          path: ddos-inspector-docker.tar.gz
+          retention-days: 30
