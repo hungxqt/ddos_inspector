@@ -11,8 +11,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # Source common functions library
 source "$SCRIPT_DIR/common_functions.sh"
 
-echo ""
-echo "🚀 DDoS Inspector - Host Deployment"
+echo -e "[DEPLOY] DDoS Inspector - Host Deployment"
 echo "===================================="
 
 # Parse command line arguments
@@ -160,12 +159,12 @@ if [ "$ACTION" = "uninstall" ]; then
     echo ""
     print_success "Complete uninstallation finished!"
     echo ""
-    echo "📋 Removed Components:"
-    echo "   ✅ Docker containers and images"
-    echo "   ✅ Firewall rules and nftables configuration"
-    echo "   ✅ System dependencies (Docker, build tools, etc.)"
-    echo "   ✅ Project data and logs"
-    echo "   ✅ System service configurations"
+    echo -e "${CYAN}[SUMMARY] Removed Components:${NC}"
+    echo -e "${GREEN}    [REMOVED] Docker containers and images${NC}"
+    echo -e "${GREEN}    [REMOVED] Firewall rules and nftables configuration${NC}"
+    echo -e "${GREEN}    [REMOVED] System dependencies (Docker, build tools, etc.)${NC}"
+    echo -e "${GREEN}    [REMOVED] Project data and logs${NC}"
+    echo -e "${GREEN}    [REMOVED] System service configurations${NC}"
     echo ""
     print_info "You may want to reboot your system to ensure all changes take effect."
     print_info "To reinstall DDoS Inspector, simply run: $0"
@@ -209,7 +208,7 @@ if [ "$SKIP_DEPS" = false ]; then
             exit 1
         fi
         
-        read -p "🤔 Would you like to install missing dependencies automatically? (y/N): " -n 1 -r
+        read -p "Would you like to install missing dependencies automatically? (y/N): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             install_dependencies
@@ -248,7 +247,7 @@ else
     else
         # Show interfaces and handle direct selection
         list_network_interfaces
-        echo "🎯 Interface Selection Options:"
+        echo "Interface Selection Options:"
         echo "   • Enter interface number (1, 2, 3, etc.) to select directly"
         echo "   • Enter interface name (eth0, docker0, etc.) to select directly"  
         echo "   • Press Enter for interactive mode"
@@ -381,18 +380,18 @@ fi
 echo ""
 print_success "Host deployment completed successfully!"
 echo ""
-echo "🔧 Host-specific management:"
-echo "   Firewall rules: sudo $SCRIPT_DIR/nftables_rules.sh --help"
-echo "   List blocked IPs: sudo $SCRIPT_DIR/nftables_rules.sh --list"
+echo "[CONFIG] Host-specific management:"
+echo "    Firewall rules: sudo $SCRIPT_DIR/nftables_rules.sh --help"
+echo "    List blocked IPs: sudo $SCRIPT_DIR/nftables_rules.sh --list"
 echo ""
-echo "🐳 Docker management:"
-echo "   Use: $SCRIPT_DIR/deploy_docker.sh --help"
-echo "   Stop: $SCRIPT_DIR/deploy_docker.sh --stop"
-echo "   Logs: $SCRIPT_DIR/deploy_docker.sh --logs"
+echo "[DOCKER] Docker management:"
+echo "    Use: $SCRIPT_DIR/deploy_docker.sh --help"
+echo "    Stop: $SCRIPT_DIR/deploy_docker.sh --stop"
+echo "    Logs: $SCRIPT_DIR/deploy_docker.sh --logs"
 
 if [ "$SERVICE_MODE" = false ]; then
     echo ""
     print_info "To enable auto-start on boot:"
-    echo "   sudo systemctl enable ddos-inspector"
-    echo "   sudo systemctl start ddos-inspector"
+    echo "    sudo systemctl enable ddos-inspector"
+    echo "    sudo systemctl start ddos-inspector"
 fi

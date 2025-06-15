@@ -30,7 +30,7 @@ ddos_inspector = {
     entropy_threshold = 2.0,
     ewma_alpha = 0.1,
     block_timeout = 600,
-    metrics_file = "/tmp/ddos_inspector_stats"
+    metrics_file = "/tmp/ddos_inspector/ddos_inspector_stats"
 }
 ```
 
@@ -56,6 +56,7 @@ ddos_inspector = {
     
     -- Monitoring
     metrics_enabled = true,
+    metrics_file = "/tmp/ddos_inspector/ddos_inspector_stats",
     log_level = "info"
 }
 ```
@@ -404,7 +405,7 @@ ddos_inspector = {
 ```lua
 -- Metrics Export Configuration
 metrics_enabled = true,             -- Enable metrics collection
-metrics_file = "/tmp/ddos_inspector_stats",
+metrics_file = "/tmp/ddos_inspector/ddos_inspector_stats",
 metrics_format = "prometheus",      -- "text" or "prometheus"
 metrics_update_interval = 5,       -- Seconds between updates
 metrics_retention = 86400,         -- Metrics retention (24 hours)

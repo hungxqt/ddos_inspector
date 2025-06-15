@@ -12,6 +12,7 @@ public:
     ~FirewallAction();
     
     void block(const std::string& ip);
+    void block(const std::string& ip, int custom_duration_seconds);
     void unblock(const std::string& ip);
     void rate_limit(const std::string& ip, int severity_level);
     bool is_blocked(const std::string& ip) const;
@@ -20,11 +21,11 @@ public:
     size_t get_rate_limited_count() const;
     void cleanup_expired_blocks();
     
-private:
-    struct BlockInfo {
+private:    struct BlockInfo {
         std::chrono::steady_clock::time_point blocked_time;
         bool is_blocked;
         int rate_limit_level; // 0 = no limit, 1-4 = severity levels
+        int custom_block_duration; // Custom duration in seconds, 0 = use default
     };
     
     std::unordered_map<std::string, BlockInfo> blocked_ips;

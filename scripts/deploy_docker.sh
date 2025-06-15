@@ -440,7 +440,7 @@ echo ""
 
 # Ask for confirmation unless in service mode or non-interactive
 if [ "$SERVICE_MODE" = "false" ] && [ "$INTERACTIVE_MODE" = "true" ]; then
-    read -p "🤔 Proceed with deployment? (y/N): " -n 1 -r
+    read -p "Proceed with deployment? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         print_error "Deployment cancelled"
@@ -519,19 +519,19 @@ if [ "$DEPLOYMENT_MODE" = "full" ] || [ "$DEPLOYMENT_MODE" = "monitoring" ]; the
     print_success "Deployment complete!"
     echo ""
     print_info "Access Points:"
-    echo -e "  🎛️  Grafana Dashboard: ${YELLOW}http://localhost:3000${NC}"
+    echo -e "  [DASHBOARD] Grafana Dashboard: ${YELLOW}http://localhost:3000${NC}"
     echo -e "       Username: admin | Password: ddos_inspector_2025"
-    echo -e "  📈 Prometheus Metrics: ${YELLOW}http://localhost:9090${NC}"
-    echo -e "  📋 Kibana Logs: ${YELLOW}http://localhost:5601${NC}"
-    echo -e "  🚨 AlertManager: ${YELLOW}http://localhost:9093${NC}"
-    echo -e "  📊 DDoS Metrics: ${YELLOW}http://localhost:9091/metrics${NC}"
-    echo -e "  📈 Snort Stats: ${YELLOW}http://localhost:9092/metrics${NC}"
+    echo -e "  [METRICS] Prometheus Metrics: ${YELLOW}http://localhost:9090${NC}"
+    echo -e "  [LOGS] Kibana Logs: ${YELLOW}http://localhost:5601${NC}"
+    echo -e "  [ALERTS] AlertManager: ${YELLOW}http://localhost:9093${NC}"
+    echo -e "  [STATS] DDoS Metrics: ${YELLOW}http://localhost:9091/metrics${NC}"
+    echo -e "  [STATS] Snort Stats: ${YELLOW}http://localhost:9092/metrics${NC}"
 fi
 
 if [ "$DEPLOYMENT_MODE" = "full" ] || [ "$DEPLOYMENT_MODE" = "core" ]; then
     echo ""
     print_info "Monitoring Commands:"
-    echo -e "  View real-time stats: ${YELLOW}cat ./data/ddos_inspector_stats${NC}"
+    echo -e "  View real-time stats: ${YELLOW}cat ./data/ddos_inspector/ddos_inspector_stats${NC}"
     echo -e "  Check container logs: ${YELLOW}$0 --logs${NC}"
     echo -e "  List blocked IPs: ${YELLOW}sudo $SCRIPT_DIR/nftables_rules.sh --list${NC}"
     echo -e "  Service status: ${YELLOW}$COMPOSE_CMD ps${NC}"

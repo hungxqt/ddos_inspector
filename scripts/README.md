@@ -2,7 +2,7 @@
 
 This folder contains all the deployment, testing, and management scripts for the DDoS Inspector system.
 
-## 📋 Available Scripts Overview
+## Available Scripts Overview
 
 | Script | Purpose | Sudo Required | Key Features |
 |--------|---------|---------------|--------------|
@@ -19,7 +19,7 @@ This folder contains all the deployment, testing, and management scripts for the
 | `prepare_for_github.sh` | Repository cleanup | No | Submission preparation |
 | `common_functions.sh` | Shared utilities | - | Helper functions |
 
-## 🚀 Primary Deployment Scripts
+## Primary Deployment Scripts
 
 ### `deploy.sh` - Main System Deployment (Recommended)
 
@@ -43,12 +43,12 @@ sudo ./scripts/deploy.sh --disable
 ```
 
 **What it accomplishes:**
-- ✅ Builds and installs the DDoS Inspector plugin
-- ✅ Configures Snort 3 integration
-- ✅ Sets up systemd service (`snort-ddos-inspector`)
-- ✅ Configures nftables firewall rules
-- ✅ Creates log directories and permissions
-- ✅ Validates installation and configuration
+- [INSTALL] Builds and installs the DDoS Inspector plugin
+- [CONFIG] Configures Snort 3 integration
+- [SERVICE] Sets up systemd service (`snort-ddos-inspector`)
+- [FIREWALL] Configures nftables firewall rules
+- [LOGGING] Creates log directories and permissions
+- [VALIDATE] Validates installation and configuration
 
 **Output locations:**
 - Plugin: `/usr/local/lib/snort/ddos_inspector.so`
@@ -103,7 +103,7 @@ sudo ./scripts/deploy_host.sh
 ./scripts/deploy_host.sh --service
 ```
 
-## 🔧 Dependencies & Build Scripts
+## Dependencies & Build Scripts
 
 ### `install_dependencies.sh` - System Dependencies Manager
 
@@ -154,7 +154,7 @@ sudo ./scripts/install_dependencies.sh
 - `build/unit_tests` - Test executables
 - `build/test_*` - Individual test programs
 
-## 🧪 Testing & Simulation Scripts
+## Testing & Simulation Scripts
 
 ### `run_tests.sh` - Comprehensive Test Suite
 
@@ -239,7 +239,7 @@ sudo ./scripts/install_dependencies.sh
 - `--slow-headers` - Send partial HTTP headers
 - `--ssl` - Use HTTPS connections
 
-## ⚙️ System Management Scripts
+## System Management Scripts
 
 ### `nftables_rules.sh` - Firewall Rules Manager
 
@@ -313,7 +313,7 @@ sudo ./scripts/nftables_rules.sh --restore /path/to/backup
 ./scripts/prepare_for_github.sh --validate
 ```
 
-## 📊 Complete Deployment Workflows
+## Complete Deployment Workflows
 
 ### Fresh Installation (Production)
 
@@ -335,7 +335,7 @@ sudo snort --show-plugins | grep ddos_inspector
 ./scripts/run_syn_flood.sh --target 127.0.0.1 --duration 30
 
 # 6. Monitor results
-cat /tmp/ddos_inspector_stats
+watch -n 1 'cat /tmp/ddos_inspector/ddos_inspector_stats'
 sudo nft list set inet filter ddos_ip_set
 ```
 
@@ -381,13 +381,13 @@ curl http://localhost:9091/metrics
 docker logs -f ddos_inspector
 ```
 
-## 🔍 Monitoring & Diagnostics
+## Monitoring & Diagnostics
 
 ### Real-time Monitoring
 
 ```bash
 # Live statistics
-watch -n 1 'cat /tmp/ddos_inspector_stats'
+watch -n 1 'cat /tmp/ddos_inspector/ddos_inspector_stats'
 
 # Service status
 sudo systemctl status snort-ddos-inspector
@@ -430,7 +430,7 @@ cat /proc/$(pgrep snort)/status | grep VmRSS
 top -p $(pgrep snort)
 ```
 
-## 🛠️ Troubleshooting Guide
+## Troubleshooting Guide
 
 ### Common Issues
 
@@ -494,7 +494,7 @@ sudo ./scripts/deploy.sh
 docker exec -it ddos_inspector /bin/bash
 ```
 
-## 📚 Related Documentation
+## Related Documentation
 
 - **[Main README](../README.md)** - Project overview and quick start
 - **[Configuration Guide](../docs/Configuration%20guide/README.md)** - Detailed configuration options
@@ -505,7 +505,7 @@ docker exec -it ddos_inspector /bin/bash
 
 ---
 
-## 💡 Best Practices
+## Best Practices
 
 ### Security Considerations
 - Always run with minimal required privileges
@@ -527,7 +527,7 @@ docker exec -it ddos_inspector /bin/bash
 
 ---
 
-## 🆘 Support & Troubleshooting
+## Support & Troubleshooting
 
 1. **Check logs first**: Most issues are logged with detailed error messages
 2. **Verify prerequisites**: Ensure all dependencies are properly installed
@@ -539,4 +539,4 @@ For additional support, refer to the project documentation or open an issue on G
 
 ---
 
-**🎯 Quick Start**: New to DDoS Inspector? Run `sudo ./scripts/deploy.sh` to get started!
+**Quick Start**: New to DDoS Inspector? Run `sudo ./scripts/deploy.sh` to get started!

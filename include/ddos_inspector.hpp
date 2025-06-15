@@ -70,6 +70,9 @@ public:
     Usage get_usage() const override
     { return INSPECT; }
 
+    // Configuration profile management
+    void applyConfigurationProfile();
+
     // Enhanced configuration parameters for Snort 3.8.1.0
     bool allow_icmp = false;
     bool enable_amplification_detection = true;
@@ -79,8 +82,10 @@ public:
     uint32_t block_timeout = 600; // seconds
     uint32_t connection_threshold = 1000;
     uint32_t rate_threshold = 50000; // packets per second
-    std::string metrics_file = "/tmp/ddos_inspector_stats";
+    std::string metrics_file = "/tmp/ddos_inspector/ddos_inspector_stats";
     std::string log_level = "info";
+    std::string config_profile = "default";
+    std::string protected_networks = "";
 };
 
 class DdosInspector : public snort::Inspector
@@ -133,6 +138,11 @@ private:
     void incrementAttackCounter(AttackInfo::Type type);
     void writeMetrics();
     void updatePerformanceMetrics(std::chrono::microseconds processing_time);
+    
+    // Dynamic mitigation methods
+    int calculateBlockDuration(AttackInfo::Severity severity, AttackInfo::Type type);
+    void logAttackDetection(const AttackInfo& attack_info, const PacketData& pkt_data, 
+                           bool stats_anomaly, bool behavior_anomaly);
     
     // Adaptive threshold management
     void updateAdaptiveThresholds();

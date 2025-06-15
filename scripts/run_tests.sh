@@ -79,22 +79,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Print configuration
-print_info "🧪 Enhanced Test Runner for DDoS Inspector"
-print_info "📁 Build directory: ${BUILD_DIR}"
-print_info "🔧 Parallel jobs: ${PARALLEL_JOBS}"
-print_info "⚡ Parallel execution: ${PARALLEL}"
-print_info "📊 Coverage analysis: ${COVERAGE}"
-print_info "🏃 Performance testing: ${PERFORMANCE}"
-print_info "🔍 Memory checking: ${MEMORY_CHECK}"
-print_info "🤖 CI mode: ${CI_MODE}"
+print_info "[TEST] Enhanced Test Runner for DDoS Inspector"
+print_info "[BUILD] Build directory: ${BUILD_DIR}"
+print_info "[CONFIG] Parallel jobs: ${PARALLEL_JOBS}"
+print_info "[PARALLEL] Parallel execution: ${PARALLEL}"
+print_info "[COVERAGE] Coverage analysis: ${COVERAGE}"
+print_info "[PERFORMANCE] Performance testing: ${PERFORMANCE}"
+print_info "[MEMORY] Memory checking: ${MEMORY_CHECK}"
+print_info "[CI] CI mode: ${CI_MODE}"
 if [[ -n "$TEST_FILTER" ]]; then
-    print_info "🔍 Test filter: ${TEST_FILTER}"
+    print_info "[FILTER] Test filter: ${TEST_FILTER}"
 fi
 echo ""
 
 # Verify build directory exists
 if [ ! -d "$BUILD_DIR" ]; then
-    print_error "❌ Build directory not found. Please run cmake build first."
+    print_error "[ERROR] Build directory not found. Please run cmake build first."
     exit 1
 fi
 
@@ -106,9 +106,9 @@ mkdir -p "$TEST_RESULTS_DIR"
 # Start timing
 START_TIME=$(date +%s)
 
-print_info "🔍 Verifying test executables..."
+print_info "[VERIFY] Verifying test executables..."
 if [ ! -f "unit_tests" ] || [ ! -f "test_stats_engine" ] || [ ! -f "test_behavior_tracker" ] || [ ! -f "test_firewall_action" ]; then
-    print_error "❌ Test executables not found. Please build the project first."
+    print_error "[ERROR] Test executables not found. Please build the project first."
     exit 1
 fi
 
@@ -134,40 +134,40 @@ fi
 # Run memory check if requested
 if [ "$MEMORY_CHECK" = true ]; then
     if command -v valgrind &> /dev/null; then
-        print_info "🔍 Running memory check with valgrind..."
+        print_info "[MEMORY] Running memory check with valgrind..."
         valgrind --tool=memcheck --leak-check=full --error-exitcode=1 ./unit_tests
     else
-        print_warning "⚠️  Valgrind not found, skipping memory check"
+        print_warning "[WARNING] Valgrind not found, skipping memory check"
     fi
 fi
 
 # Run main test suite
-print_info "🧪 Running test suite..."
+print_info "[RUN] Running test suite..."
 if ctest $CTEST_ARGS; then
-    print_success "✅ All tests passed!"
+    print_success "[SUCCESS] All tests passed!"
     TEST_SUCCESS=true
 else
-    print_error "❌ Some tests failed!"
+    print_error "[ERROR] Some tests failed!"
     TEST_SUCCESS=false
 fi
 
 # Performance testing
 if [ "$PERFORMANCE" = true ]; then
-    print_info "🏃 Running performance benchmarks..."
+    print_info "[PERFORMANCE] Running performance benchmarks..."
     
-    print_info "📊 StatsEngine Performance:"
+    print_info "[STATS] StatsEngine Performance:"
     time ./test_stats_engine --gtest_filter="*Performance*" 2>&1 | tee "${TEST_RESULTS_DIR}/stats_engine_perf.log"
     
-    print_info "📊 BehaviorTracker Performance:"
+    print_info "[STATS] BehaviorTracker Performance:"
     time ./test_behavior_tracker --gtest_filter="*Performance*" 2>&1 | tee "${TEST_RESULTS_DIR}/behavior_tracker_perf.log"
     
-    print_info "📊 FirewallAction Performance:"
+    print_info "[STATS] FirewallAction Performance:"
     time ./test_firewall_action --gtest_filter="*Performance*" 2>&1 | tee "${TEST_RESULTS_DIR}/firewall_action_perf.log"
 fi
 
 # Generate coverage report
 if [ "$COVERAGE" = true ]; then
-    print_info "📊 Generating coverage report..."
+    print_info "[COVERAGE] Generating coverage report..."
     
     # Check if coverage data exists
     if command -v gcov &> /dev/null && command -v lcov &> /dev/null; then
@@ -184,9 +184,9 @@ if [ "$COVERAGE" = true ]; then
         # Generate summary
         lcov --summary coverage_filtered.info 2>&1 | tee "${TEST_RESULTS_DIR}/coverage_summary.txt"
         
-        print_success "📊 Coverage report generated at: ${COVERAGE_DIR}/index.html"
+        print_success "[COVERAGE] Coverage report generated at: ${COVERAGE_DIR}/index.html"
     else
-        print_warning "⚠️  Coverage tools (gcov/lcov) not found. Please install for coverage analysis."
+        print_warning "[WARNING] Coverage tools (gcov/lcov) not found. Please install for coverage analysis."
     fi
 fi
 
@@ -196,25 +196,25 @@ EXECUTION_TIME=$((END_TIME - START_TIME))
 
 # Generate summary report
 echo ""
-print_info "📋 Test Execution Summary"
+print_info "[SUMMARY] Test Execution Summary"
 echo "=================================="
-echo "⏱️  Total execution time: ${EXECUTION_TIME}s"
-echo "🧪 Tests run with $([ "$PARALLEL" = true ] && echo "parallel" || echo "sequential") execution"
-echo "📊 Coverage analysis: $([ "$COVERAGE" = true ] && echo "enabled" || echo "disabled")"
-echo "🏃 Performance testing: $([ "$PERFORMANCE" = true ] && echo "enabled" || echo "disabled")"
-echo "🔍 Memory checking: $([ "$MEMORY_CHECK" = true ] && echo "enabled" || echo "disabled")"
+echo "[TIME] Total execution time: ${EXECUTION_TIME}s"
+echo "[MODE] Tests run with $([ "$PARALLEL" = true ] && echo "parallel" || echo "sequential") execution"
+echo "[COVERAGE] Coverage analysis: $([ "$COVERAGE" = true ] && echo "enabled" || echo "disabled")"
+echo "[PERFORMANCE] Performance testing: $([ "$PERFORMANCE" = true ] && echo "enabled" || echo "disabled")"
+echo "[MEMORY] Memory checking: $([ "$MEMORY_CHECK" = true ] && echo "enabled" || echo "disabled")"
 
 if [ "$TEST_SUCCESS" = true ]; then
-    print_success "🎉 All tests completed successfully!"
+    print_success "[SUCCESS] All tests completed successfully!"
     
     # Performance warnings
     if [ $EXECUTION_TIME -gt 30 ]; then
-        print_warning "⚠️  Warning: Test execution took longer than expected (>30s)"
+        print_warning "[WARNING] Test execution took longer than expected (>30s)"
     fi
     
     exit 0
 else
-    print_error "💥 Test execution failed!"
+    print_error "[FAILURE] Test execution failed!"
     print_info "Check test results in: ${TEST_RESULTS_DIR}/"
     exit 1
 fi

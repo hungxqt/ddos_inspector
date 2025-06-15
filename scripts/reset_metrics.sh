@@ -6,25 +6,33 @@
 
 set -e
 
-echo "🧹 Starting DDoS Inspector metrics-only cleanup..."
-echo "ℹ️  This will preserve all user configurations in Grafana and Kibana"
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+echo -e "${CYAN}Starting DDoS Inspector metrics-only cleanup...${NC}"
+echo -e "${BLUE}[INFO] This will preserve all user configurations in Grafana and Kibana${NC}"
 
 # Function to temporarily stop DDoS Inspector to prevent metric overwrites
 pause_ddos_inspector() {
-    echo "  Temporarily pausing DDoS Inspector to reset metrics..."
+    echo -e "${YELLOW}[PAUSE] Temporarily pausing DDoS Inspector to reset metrics...${NC}"
     if docker ps --format '{{.Names}}' | grep -q '^ddos_inspector$'; then
         docker pause ddos_inspector >/dev/null 2>&1
-        echo "  ✅ DDoS Inspector paused"
+        echo -e "${GREEN}[SUCCESS] DDoS Inspector paused${NC}"
         return 0
     else
-        echo "  ℹ️  DDoS Inspector not running"
+        echo -e "${BLUE}[INFO] DDoS Inspector not running${NC}"
         return 1
     fi
 }
 
 # Function to resume DDoS Inspector
 resume_ddos_inspector() {
-    echo "  Resuming DDoS Inspector..."
+    echo -e "${BLUE}[RESUME] Resuming DDoS Inspector...${NC}"
     
     # Check if container exists (running or paused)
     if docker ps -a --format '{{.Names}}' | grep -q '^ddos_inspector$'; then
@@ -34,33 +42,33 @@ resume_ddos_inspector() {
         if [ "$container_status" = "paused" ]; then
             echo "    Container is paused, unpausing..."
             if docker unpause ddos_inspector >/dev/null 2>&1; then
-                echo "  ✅ DDoS Inspector resumed successfully"
+                echo -e "${GREEN}[SUCCESS] DDoS Inspector resumed successfully${NC}"
             else
-                echo "  ⚠️  Failed to unpause DDoS Inspector"
+                echo -e "${YELLOW}[WARNING] Failed to unpause DDoS Inspector${NC}"
                 # Try restarting if unpause fails
                 echo "    Attempting restart instead..."
                 docker restart ddos_inspector >/dev/null 2>&1
-                echo "  ✅ DDoS Inspector restarted"
+                echo -e "${GREEN}[SUCCESS] DDoS Inspector restarted${NC}"
             fi
         elif [ "$container_status" = "running" ]; then
-            echo "  ℹ️  DDoS Inspector is already running"
+            echo -e "${BLUE}[INFO] DDoS Inspector is already running${NC}"
         elif [ "$container_status" = "exited" ]; then
             echo "    Container is stopped, starting..."
             docker start ddos_inspector >/dev/null 2>&1
-            echo "  ✅ DDoS Inspector started"
+            echo -e "${GREEN}[SUCCESS] DDoS Inspector started${NC}"
         else
-            echo "  ⚠️  DDoS Inspector container status: $container_status"
+            echo -e "${YELLOW}[WARNING] DDoS Inspector container status: $container_status${NC}"
         fi
     else
-        echo "  ⚠️  DDoS Inspector container not found"
+        echo -e "${YELLOW}[WARNING] DDoS Inspector container not found${NC}"
     fi
 }
 
 # Function to reset DDoS Inspector stats file with permission handling
 reset_stats_file() {
-    local stats_file="./data/ddos_inspector_stats"
+    local stats_file="./data/ddos_inspector/ddos_inspector_stats"
     
-    echo "  Resetting DDoS Inspector stats file..."
+    echo -e "${BLUE}[RESET] Resetting DDoS Inspector stats file...${NC}"
     
     # Create the reset content
     local reset_content="packets_processed:0
@@ -81,28 +89,28 @@ detection_time:0"
     # Method 1: Reset from inside the container (most reliable)
     echo "    Attempting to reset stats from inside the container..."
     if docker exec ddos_inspector sh -c "echo '$reset_content' > /app/data/ddos_inspector_stats" 2>/dev/null; then
-        echo "  ✅ DDoS Inspector stats reset from inside container"
+        echo -e "${GREEN}[SUCCESS] DDoS Inspector stats reset from inside container${NC}"
         
         # Also send a signal to the process to refresh stats if possible
         echo "    Sending signal to DDoS Inspector to refresh stats..."
         docker exec ddos_inspector pkill -USR1 snort 2>/dev/null || true
         
     else
-        echo "    ⚠️  Could not reset from inside container, trying host method..."
+        echo -e "${YELLOW}[WARNING] Could not reset from inside container, trying host method...${NC}"
         
         # Method 2: Reset from host (fallback)
         # Try to write directly first
         if echo "$reset_content" > "$stats_file" 2>/dev/null; then
-            echo "  ✅ DDoS Inspector stats reset from host"
+            echo -e "${GREEN}[SUCCESS] DDoS Inspector stats reset from host${NC}"
         else
             # If direct write fails due to permissions, use sudo
-            echo "  ⚠️  Permission denied, trying with sudo..."
+            echo -e "${YELLOW}[WARNING] Permission denied, trying with sudo...${NC}"
             if echo "$reset_content" | sudo tee "$stats_file" > /dev/null; then
                 # Fix ownership back to current user
                 sudo chown "$(whoami):$(whoami)" "$stats_file"
-                echo "  ✅ DDoS Inspector stats reset from host (with sudo)"
+                echo -e "${GREEN}[SUCCESS] DDoS Inspector stats reset from host (with sudo)${NC}"
             else
-                echo "  ❌ Failed to reset stats file even with sudo"
+                echo -e "${RED}[ERROR] Failed to reset stats file even with sudo${NC}"
                 return 1
             fi
         fi
@@ -110,41 +118,41 @@ detection_time:0"
         # Force container restart to pick up the reset stats
         echo "    Forcing container restart to pick up reset stats..."
         docker restart ddos_inspector >/dev/null 2>&1
-        echo "    ✅ Container restarted to reload stats"
+        echo -e "${GREEN}[SUCCESS] Container restarted to reload stats${NC}"
     fi
     
     # Wait a moment for the file to be updated
     sleep 2
     
     # Verify the reset worked
-    echo "  📊 Current stats file content:"
+    echo -e "${CYAN}[STATS] Current stats file content:${NC}"
     if [ -f "$stats_file" ]; then
         cat "$stats_file" | sed 's/^/    /'
     else
-        echo "    ⚠️  Stats file not found on host"
+        echo -e "${YELLOW}[WARNING] Stats file not found on host${NC}"
     fi
     
     # Also check from inside container
-    echo "  📊 Stats file content inside container:"
-    docker exec ddos_inspector cat /app/data/ddos_inspector_stats 2>/dev/null | sed 's/^/    /' || echo "    ⚠️  Could not read stats from inside container"
+    echo -e "${CYAN}[STATS] Stats file content inside container:${NC}"
+    docker exec ddos_inspector cat /app/data/ddos_inspector_stats 2>/dev/null | sed 's/^/    /' || echo -e "${YELLOW}[WARNING] Could not read stats from inside container${NC}"
 }
 
 # Function to restart metrics exporters to force fresh data
 restart_metrics_exporters() {
-    echo "  Restarting metrics exporters to clear cached data..."
+    echo -e "${BLUE}[RESTART] Restarting metrics exporters to clear cached data...${NC}"
     
     # Restart DDoS metrics exporter
     if docker ps --format '{{.Names}}' | grep -q '^ddos_metrics_exporter$'; then
         echo "    Restarting DDoS metrics exporter..."
         docker restart ddos_metrics_exporter >/dev/null 2>&1
-        echo "    ✅ DDoS metrics exporter restarted"
+        echo -e "${GREEN}[SUCCESS] DDoS metrics exporter restarted${NC}"
     fi
     
     # Restart Snort stats exporter
     if docker ps --format '{{.Names}}' | grep -q '^snort_stats_exporter$'; then
         echo "    Restarting Snort stats exporter..."
         docker restart snort_stats_exporter >/dev/null 2>&1
-        echo "    ✅ Snort stats exporter restarted"
+        echo -e "${GREEN}[SUCCESS] Snort stats exporter restarted${NC}"
     fi
     
     # Give exporters a moment to restart and send fresh data
@@ -154,13 +162,13 @@ restart_metrics_exporters() {
 
 # Function to reset Prometheus data by restarting it (since admin API is disabled)
 reset_prometheus_data() {
-    echo "  Resetting Prometheus time series data (preserving configuration)..."
+    echo -e "${BLUE}[RESET] Resetting Prometheus time series data (preserving configuration)...${NC}"
     
     # Check if Prometheus container is running
     if docker ps --format '{{.Names}}' | grep -q '^ddos_prometheus$'; then
         echo "    Restarting Prometheus to clear time series data..."
         docker restart ddos_prometheus >/dev/null 2>&1
-        echo "    ✅ Prometheus restarted with fresh data"
+        echo -e "${GREEN}[SUCCESS] Prometheus restarted with fresh data${NC}"
         
         # Wait for Prometheus to come back online
         echo "    Waiting for Prometheus to restart..."
@@ -169,22 +177,22 @@ reset_prometheus_data() {
         # Check if it's healthy
         for i in {1..10}; do
             if curl -s http://localhost:9090/-/healthy >/dev/null 2>&1; then
-                echo "    ✅ Prometheus is healthy and ready"
+                echo -e "${GREEN}[SUCCESS] Prometheus is healthy and ready${NC}"
                 break
             fi
             if [ $i -eq 10 ]; then
-                echo "    ⚠️  Prometheus may still be starting up"
+                echo -e "${YELLOW}[WARNING] Prometheus may still be starting up${NC}"
             fi
             sleep 2
         done
     else
-        echo "    ℹ️  Prometheus not running, data will be clean on next start"
+        echo -e "${BLUE}[INFO] Prometheus not running, data will be clean on next start${NC}"
     fi
 }
 
 # Function to reset Elasticsearch indices only (preserve Kibana configurations)
 reset_elasticsearch_data() {
-    echo "  Resetting Elasticsearch log data (preserving Kibana configurations)..."
+    echo -e "${BLUE}[RESET] Resetting Elasticsearch log data (preserving Kibana configurations)...${NC}"
     
     # Check if Elasticsearch is running
     if docker ps --format '{{.Names}}' | grep -q '^ddos_elasticsearch$'; then
@@ -209,44 +217,44 @@ reset_elasticsearch_data() {
         
         for index_pattern in "${indices_to_delete[@]}"; do
             if curl -s -X DELETE "http://localhost:9200/${index_pattern}" 2>/dev/null | grep -q "acknowledged"; then
-                echo "    ✅ Deleted indices matching: $index_pattern"
+                echo -e "${GREEN}[SUCCESS] Deleted indices matching: $index_pattern${NC}"
             else
-                echo "    ℹ️  No indices found matching: $index_pattern"
+                echo -e "${BLUE}[INFO] No indices found matching: $index_pattern${NC}"
             fi
         done
         
-        echo "    ✅ Log data cleared, Kibana configurations preserved"
+        echo -e "${GREEN}[SUCCESS] Log data cleared, Kibana configurations preserved${NC}"
     else
-        echo "    ℹ️  Elasticsearch not running, data will be clean on next start"
+        echo -e "${BLUE}[INFO] Elasticsearch not running, data will be clean on next start${NC}"
     fi
 }
 
 # Function to clean log files only
 clean_log_files() {
     if [ -d "./logs" ] && [ "$(find ./logs -type f 2>/dev/null | wc -l)" -gt 0 ]; then
-        echo "  Cleaning Snort log files..."
+        echo -e "${BLUE}[CLEAN] Cleaning Snort log files...${NC}"
         if rm -rf ./logs/* 2>/dev/null; then
-            echo "  ✅ Snort logs cleaned"
+            echo -e "${GREEN}[SUCCESS] Snort logs cleaned${NC}"
         else
-            echo "  ⚠️  Some log files require sudo, cleaning with elevated permissions..."
+            echo -e "${YELLOW}[WARNING] Some log files require sudo, cleaning with elevated permissions...${NC}"
             sudo rm -rf ./logs/*
-            echo "  ✅ Snort logs cleaned (with sudo)"
+            echo -e "${GREEN}[SUCCESS] Snort logs cleaned (with sudo)${NC}"
         fi
     else
-        echo "  ℹ️  No Snort logs found (already clean)"
+        echo -e "${BLUE}[INFO] No Snort logs found (already clean)${NC}"
     fi
     
     # Clean any temporary prometheus-elk-metrics logs
     if [ -d "./prometheus-elk-metrics/logs" ] && [ "$(find ./prometheus-elk-metrics/logs -type f 2>/dev/null | wc -l)" -gt 0 ]; then
-        echo "  Cleaning Prometheus-ELK temporary logs..."
+        echo -e "${BLUE}[CLEAN] Cleaning Prometheus-ELK temporary logs...${NC}"
         rm -rf ./prometheus-elk-metrics/logs/*
-        echo "  ✅ Prometheus-ELK logs cleaned"
+        echo -e "${GREEN}[SUCCESS] Prometheus-ELK logs cleaned${NC}"
     fi
 }
 
 # Main reset operations
 echo ""
-echo "🎯 Resetting metrics data only..."
+echo -e "${CYAN}[TARGET] Resetting metrics data only...${NC}"
 
 # Step 1: Pause DDoS Inspector to prevent it from overwriting our reset
 ddos_was_running=$(pause_ddos_inspector && echo "true" || echo "false")
@@ -272,21 +280,21 @@ if [ "$ddos_was_running" = "true" ]; then
 fi
 
 echo ""
-echo "🎯 Metrics-only cleanup completed successfully!"
+echo -e "${GREEN}[TARGET] Metrics-only cleanup completed successfully!${NC}"
 echo ""
-echo "📝 What was reset:"
-echo "  ✅ DDoS Inspector statistics counters → 0"
-echo "  ✅ All Snort log files → cleared"
-echo "  ✅ Prometheus time series data → cleared"
-echo "  ✅ Elasticsearch log indices → cleared"
-echo "  ✅ Metrics exporters → restarted with fresh data"
+echo -e "${CYAN}[SUMMARY] What was reset:${NC}"
+echo -e "${GREEN}    [SUCCESS] DDoS Inspector statistics counters → 0${NC}"
+echo -e "${GREEN}    [SUCCESS] All Snort log files → cleared${NC}"
+echo -e "${GREEN}    [SUCCESS] Prometheus time series data → cleared${NC}"
+echo -e "${GREEN}    [SUCCESS] Elasticsearch log indices → cleared${NC}"
+echo -e "${GREEN}    [SUCCESS] Metrics exporters → restarted with fresh data${NC}"
 echo ""
-echo "💾 What was preserved:"
-echo "  ✅ Grafana dashboards, users, and settings"
-echo "  ✅ Kibana visualizations, index patterns, and saved searches"
-echo "  ✅ Prometheus configuration and rules"
-echo "  ✅ Elasticsearch cluster settings and mappings"
-echo "  ✅ AlertManager configuration"
+echo -e "${BLUE}[PRESERVED] What was preserved:${NC}"
+echo -e "${GREEN}    [PRESERVED] Grafana dashboards, users, and settings${NC}"
+echo -e "${GREEN}    [PRESERVED] Kibana visualizations, index patterns, and saved searches${NC}"
+echo -e "${GREEN}    [PRESERVED] Prometheus configuration and rules${NC}"
+echo -e "${GREEN}    [PRESERVED] Elasticsearch cluster settings and mappings${NC}"
+echo -e "${GREEN}    [PRESERVED] AlertManager configuration${NC}"
 echo ""
-echo "🚀 Grafana should now show zero metrics within 60 seconds!"
-echo "💡 The DDoS Inspector will start generating fresh metrics from zero."
+echo -e "${GREEN}[READY] Grafana should now show zero metrics within 60 seconds!${NC}"
+echo -e "${BLUE}[INFO] The DDoS Inspector will start generating fresh metrics from zero.${NC}"

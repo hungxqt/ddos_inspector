@@ -7,21 +7,12 @@ route:
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 1h
-  receiver: 'web.hook'
+  receiver: 'default-receiver'
 
 receivers:
-- name: 'web.hook'
+- name: 'default-receiver'
   webhook_configs:
-  - url: 'http://localhost:5001/webhook'
+  - url: 'http://httpbin.org/post'
     send_resolved: true
 
-- name: 'email-alerts'
-  email_configs:
-  - to: 'admin@your-domain.com'
-
-inhibit_rules:
-  - source_match:
-      severity: 'critical'
-    target_match:
-      severity: 'warning'
-    equal: ['alertname', 'dev', 'instance']
+inhibit_rules: []

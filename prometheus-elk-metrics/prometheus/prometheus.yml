@@ -38,9 +38,10 @@ scrape_configs:
       - targets: ['ddos_elasticsearch:9200']
     metrics_path: /_prometheus/metrics
     scrape_interval: 30s
+    scrape_timeout: 10s
 
-  - job_name: 'logstash'
-    static_configs:
-      - targets: ['ddos_logstash:9600']
-    metrics_path: /_node/stats
-    scrape_interval: 30s
+  # Logstash metrics via dedicated exporter (if available)
+  # - job_name: 'logstash-exporter'
+  #   static_configs:
+  #     - targets: ['logstash_exporter:9198']
+  #   scrape_interval: 30s

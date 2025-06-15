@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${GREEN}🧹 Preparing DDoS Inspector for GitHub Publication${NC}"
+echo -e "${GREEN}[PREPARE] Preparing DDoS Inspector for GitHub Publication${NC}"
 
 # Change to project root
 cd "$(dirname "$0")/.."
@@ -110,7 +110,7 @@ if ! grep -q "SECURITY NOTICE" README.md; then
     cp README.md README.md.backup
     
     # Add security section after table of contents
-    sed -i '/## Table of Contents/a\\n## 🔒 **Security Notice**\n\n⚠️ **Before deploying in production:**\n- Change all default passwords (especially Grafana: admin/admin)\n- Use HTTPS for web interfaces\n- Configure proper firewall rules\n- Review and customize configuration files\n- Use strong authentication mechanisms\n\n**Default credentials are for development/testing only!**\n' README.md
+    sed -i '/## Table of Contents/a\\n## [SECURITY] **Security Notice**\n\n[WARNING] **Before deploying in production:**\n- Change all default passwords (especially Grafana: admin/admin)\n- Use HTTPS for web interfaces\n- Configure proper firewall rules\n- Review and customize configuration files\n- Use strong authentication mechanisms\n\n**Default credentials are for development/testing only!**\n' README.md
 fi
 
 # 7. Validate project structure
@@ -120,9 +120,9 @@ echo -e "${BLUE}Validating project structure...${NC}"
 REQUIRED_FILES=("README.md" "LICENSE" "CMakeLists.txt" ".gitignore")
 for file in "${REQUIRED_FILES[@]}"; do
     if [ ! -f "$file" ]; then
-        echo -e "${RED}❌ Missing required file: $file${NC}"
+        echo -e "${RED}[ERROR] Missing required file: $file${NC}"
     else
-        echo -e "${GREEN}✅ Found: $file${NC}"
+        echo -e "${GREEN}[SUCCESS] Found: $file${NC}"
     fi
 done
 
@@ -133,41 +133,41 @@ FOUND_SENSITIVE=false
 
 for pattern in "${SENSITIVE_PATTERNS[@]}"; do
     if grep -r -i "$pattern" src/ include/ scripts/ --include="*.cpp" --include="*.hpp" --include="*.sh" >/dev/null 2>&1; then
-        echo -e "${YELLOW}⚠️  Found potential sensitive pattern: $pattern${NC}"
+        echo -e "${YELLOW}[WARNING] Found potential sensitive pattern: $pattern${NC}"
         FOUND_SENSITIVE=true
     fi
 done
 
 if [ "$FOUND_SENSITIVE" = false ]; then
-    echo -e "${GREEN}✅ No sensitive patterns found in source code${NC}"
+    echo -e "${GREEN}[SUCCESS] No sensitive patterns found in source code${NC}"
 fi
 
 # 8. File size check
 echo -e "${BLUE}Checking for large files...${NC}"
 find . -type f -size +10M -not -path "./.git/*" -not -path "./build/*" | while read -r file; do
-    echo -e "${YELLOW}⚠️  Large file found: $file ($(du -h "$file" | cut -f1))${NC}"
+    echo -e "${YELLOW}[WARNING] Large file found: $file ($(du -h "$file" | cut -f1))${NC}"
 done
 
 # 9. Create publication checklist
 echo -e "${BLUE}Creating publication checklist...${NC}"
 cat > GITHUB_PUBLICATION_CHECKLIST.md << 'EOF'
-# 📋 GitHub Publication Checklist
+# [CHECKLIST] GitHub Publication Checklist
 
-## Pre-Publication Cleanup ✅
+## Pre-Publication Cleanup [COMPLETE]
 - [ ] Run `./scripts/prepare_for_github.sh`
 - [ ] Remove all build artifacts and compiled binaries
 - [ ] Clean temporary and cache files
 - [ ] Remove any `.env` files with sensitive data
 - [ ] Create `.env.example` with safe defaults
 
-## Security Review 🔒
+## Security Review [SECURITY]
 - [ ] Change all default passwords in documentation
 - [ ] Remove any hardcoded secrets or API keys
 - [ ] Review configuration files for sensitive information
 - [ ] Add security notices to documentation
 - [ ] Ensure firewall rules don't expose internal networks
 
-## Documentation Review 📚
+## Documentation Review [DOCS]
 - [ ] README.md is complete and accurate
 - [ ] Installation instructions are clear
 - [ ] Usage examples work correctly
@@ -175,26 +175,26 @@ cat > GITHUB_PUBLICATION_CHECKLIST.md << 'EOF'
 - [ ] License file is present and correct
 - [ ] Contributing guidelines are included
 
-## Code Quality 🧹
+## Code Quality [QUALITY]
 - [ ] Code is properly commented
 - [ ] No debug print statements left in code
 - [ ] Error handling is appropriate
 - [ ] No TODO comments with sensitive information
 
-## Testing 🧪
+## Testing [TEST]
 - [ ] All tests pass: `./scripts/run_tests.sh`
 - [ ] Build process works from clean state
 - [ ] Docker deployment works: `./scripts/deploy_docker.sh --test`
 - [ ] Documentation examples are validated
 
-## Repository Settings ⚙️
+## Repository Settings [CONFIG]
 - [ ] Choose appropriate visibility (public/private)
 - [ ] Add repository description and tags
 - [ ] Configure branch protection rules
 - [ ] Set up issue templates
 - [ ] Add repository topics/tags for discoverability
 
-## Final Steps 🚀
+## Final Steps [PUBLISH]
 - [ ] Create initial release/tag
 - [ ] Write release notes
 - [ ] Consider creating a demo video or screenshots
@@ -216,15 +216,15 @@ if [ -d ".git" ]; then
     # Count untracked files
     UNTRACKED_COUNT=$(git status --porcelain | grep "^??" | wc -l)
     if [ "$UNTRACKED_COUNT" -gt 0 ]; then
-        echo -e "${YELLOW}⚠️  $UNTRACKED_COUNT untracked files found${NC}"
+        echo -e "${YELLOW}[WARNING] $UNTRACKED_COUNT untracked files found${NC}"
         echo -e "${BLUE}Consider adding them to .gitignore if they shouldn't be committed${NC}"
     fi
 fi
 
 echo ""
-echo -e "${GREEN}🎉 GitHub preparation complete!${NC}"
+echo -e "${GREEN}[SUCCESS] GitHub preparation complete!${NC}"
 echo ""
-echo -e "${BLUE}📋 Next steps:${NC}"
+echo -e "${BLUE}[NEXT] Next steps:${NC}"
 echo -e "1. Review ${YELLOW}GITHUB_PUBLICATION_CHECKLIST.md${NC}"
 echo -e "2. Update any documentation as needed"
 echo -e "3. Test the build process: ${YELLOW}./scripts/build_project.sh${NC}"
@@ -232,4 +232,4 @@ echo -e "4. Run tests: ${YELLOW}./scripts/run_tests.sh${NC}"
 echo -e "5. Commit your changes"
 echo -e "6. Create your GitHub repository"
 echo ""
-echo -e "${GREEN}✅ Your project is ready for GitHub publication!${NC}"
+echo -e "${GREEN}[READY] Your project is ready for GitHub publication!${NC}"

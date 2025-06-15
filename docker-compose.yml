@@ -18,13 +18,13 @@ services:
       - HOST_FIREWALL_MODE=true  # Enable host firewall integration
     volumes:
       - ./logs:/var/log/snort
-      - ./data:/app/data  # Stats and metrics output
+      - ./data:/tmp/ddos_inspector/  # Mount /tmp to access the DDoS inspector stats file
       - ./snort_ddos_config.lua:/etc/snort/snort_ddos_config.lua:ro
       - /proc:/host/proc:ro  # Access to host process info
       - /sys:/host/sys:ro    # Access to host system info
       - /run/xtables.lock:/run/xtables.lock  # Share iptables lock with host
     healthcheck:
-      test: ["CMD", "sh", "-c", "snort --version && [ -f /app/data/ddos_inspector_stats ]"]
+      test: ["CMD", "sh", "-c", "snort --version && [ -f /tmp/ddos_inspector/ddos_inspector_stats ]"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -192,10 +192,10 @@ services:
     ports:
       - "9091:9091"
     environment:
-      - DDOS_STATS_FILE=/app/data/ddos_inspector_stats
+      - DDOS_STATS_FILE=/tmp/ddos_inspector/ddos_inspector_stats
       - BIND_ADDRESS=0.0.0.0:9091
     volumes:
-      - ./data:/app/data:ro
+      - ./data:/tmp/ddos_inspector  # Mount local data directory to container /tmp/ddos_inspector to access the DDoS inspector stats file
     networks:
       - ddos_net
 

@@ -237,19 +237,94 @@ bool BehaviorTracker::detectVolumeAttack(const Behavior& b) {
 }
 
 bool BehaviorTracker::detectDistributedAttack() {
-    // Check if we're seeing attacks from multiple IPs
+    // Enhanced distributed attack detection with multiple correlation factors
+    
+    // Count IPs with suspicious activity patterns
     int attacking_ips = 0;
+    int coordinated_ips = 0;
+    std::vector<std::chrono::steady_clock::time_point> attack_start_times;
+    
+    auto now = std::chrono::steady_clock::now();
+    
     for (const auto& pair : behaviors) {
         const auto& b = pair.second;
-        // Much higher criteria for considering an IP as attacking
+        
+        // Enhanced criteria for considering an IP as attacking
+        bool is_attacking = false;
+        
+        // Volume-based indicators
         if (b.total_packets > 200 && 
             (b.syn_count > 100 || b.http_requests > 150 || b.ack_count > 100)) {
+            is_attacking = true;
+        }
+        
+        // Rate-based indicators
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - b.first_seen);
+        if (duration.count() > 0) {
+            double packets_per_second = static_cast<double>(b.total_packets) / duration.count();
+            if (packets_per_second > 500) { // High rate indicator
+                is_attacking = true;
+            }
+        }
+        
+        // Pattern-based indicators (mixed attack types suggest coordination)
+        int attack_types = 0;
+        if (b.syn_count > 50) attack_types++;
+        if (b.ack_count > 50) attack_types++;
+        if (b.http_requests > 75) attack_types++;
+        
+        if (attack_types >= 2) {
+            is_attacking = true;
+        }
+        
+        if (is_attacking) {
             attacking_ips++;
+            attack_start_times.push_back(b.first_seen);
+            
+            // Check for temporal coordination (attacks starting within similar timeframes)
+            auto time_since_start = std::chrono::duration_cast<std::chrono::seconds>(now - b.first_seen);
+            if (time_since_start.count() <= 120) { // Started within last 2 minutes
+                coordinated_ips++;
+            }
         }
     }
     
-    // Distributed attack: much higher thresholds for normal network usage
-    if (attacking_ips >= 20 && total_global_packets > 50000) {  // Significantly increased thresholds
+    // Temporal correlation analysis
+    bool temporal_correlation = false;
+    if (attack_start_times.size() >= 5) {
+        // Check if multiple attacks started within a narrow time window
+        std::sort(attack_start_times.begin(), attack_start_times.end());
+        
+        for (size_t i = 0; i < attack_start_times.size() - 4; i++) {
+            auto time_span = std::chrono::duration_cast<std::chrono::seconds>(
+                attack_start_times[i + 4] - attack_start_times[i]);
+            
+            if (time_span.count() <= 30) { // 5 attacks within 30 seconds
+                temporal_correlation = true;
+                break;
+            }
+        }
+    }
+    
+    // Enhanced distributed attack criteria
+    // 1. High number of attacking IPs with high global traffic
+    if (attacking_ips >= 20 && total_global_packets > 50000) {
+        return true;
+    }
+    
+    // 2. Moderate number of IPs with temporal correlation
+    if (attacking_ips >= 10 && coordinated_ips >= 7 && temporal_correlation) {
+        return true;
+    }
+    
+    // 3. Large number of coordinated IPs even with moderate traffic
+    if (coordinated_ips >= 15 && total_global_packets > 25000) {
+        return true;
+    }
+    
+    // 4. Sophisticated low-and-slow distributed attack
+    if (attacking_ips >= 30 && behaviors.size() >= 50) {
+        // Many IPs with suspicious but not individually high activity
         return true;
     }
     

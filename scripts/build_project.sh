@@ -107,7 +107,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-print_info "🔨 Building DDoS Inspector Plugin..."
+print_info "[BUILD] Building DDoS Inspector Plugin..."
 print_info "Build Configuration:"
 echo -e "  Build Type: $BUILD_TYPE"
 echo -e "  Build Jobs: $BUILD_JOBS"
@@ -126,7 +126,7 @@ cd "$PROJECT_ROOT"
 
 # Clean build directory if requested
 if [ "$CLEAN_BUILD" = true ]; then
-    print_warning "🧹 Cleaning build directory..."
+    print_warning "[CLEAN] Cleaning build directory..."
     rm -rf "$BUILD_DIR"
 fi
 
@@ -143,7 +143,7 @@ fi
 
 # Check if we have Ninja or need to use Make
 if [ -n "$FORCE_GENERATOR" ]; then
-    print_info "🔧 Using forced generator: $FORCE_GENERATOR..."
+    print_info "[GENERATOR] Using forced generator: $FORCE_GENERATOR..."
     if [ "$FORCE_GENERATOR" = "Ninja" ]; then
         cmake .. -GNinja -DCMAKE_BUILD_TYPE="$BUILD_TYPE" $CMAKE_VERBOSE
         BUILD_TOOL="ninja $BUILD_VERBOSE"
@@ -154,15 +154,15 @@ if [ -n "$FORCE_GENERATOR" ]; then
         TEST_COMMAND="make test"
     fi
 elif command -v ninja &> /dev/null && [ -f "build.ninja" ]; then
-    print_info "🔧 Using existing Ninja build system..."
+    print_info "[NINJA] Using existing Ninja build system..."
     BUILD_TOOL="ninja $BUILD_VERBOSE"
     TEST_COMMAND="ninja test"
 elif [ -f "Makefile" ]; then
-    print_info "🔧 Using existing Make build system..."
+    print_info "[MAKE] Using existing Make build system..."
     BUILD_TOOL="make -j$BUILD_JOBS $BUILD_VERBOSE"
     TEST_COMMAND="make test"
 else
-    print_info "⚙️  Configuring project with CMake..."
+    print_info "[CMAKE] Configuring project with CMake..."
     # Try Ninja first, fall back to Make
     if command -v ninja &> /dev/null; then
         cmake .. -GNinja -DCMAKE_BUILD_TYPE="$BUILD_TYPE" $CMAKE_VERBOSE
@@ -176,24 +176,24 @@ else
 fi
 
 # Build the project
-print_info "🔨 Building project..."
+print_info "[BUILD] Building project..."
 if $BUILD_TOOL; then
     print_success "Build successful!"
     
     # Run tests if requested and available
     if [ "$RUN_TESTS" = true ] && ([ -f "CTestTestfile.cmake" ] || [ -f "test" ]); then
-        print_info "🧪 Running tests..."
+        print_info "[TEST] Running tests..."
         if $TEST_COMMAND; then
             print_success "All tests passed!"
         else
             print_warning "Some tests failed, but build completed"
         fi
     elif [ "$RUN_TESTS" = false ]; then
-        print_info "⏭️  Skipping tests as requested"
+        print_info "Skipping tests as requested"
     fi
     
     # Copy plugin to release folder
-    print_info "📦 Preparing release artifacts..."
+    print_info "[RELEASE] Preparing release artifacts..."
     
     # Create release directory if it doesn't exist
     mkdir -p "$RELEASE_DIR"
@@ -235,7 +235,7 @@ if $BUILD_TOOL; then
     fi
     
     # Show build artifacts
-    print_info "📦 Build artifacts created:"
+    print_info "[ARTIFACTS] Build artifacts created:"
     echo -e "  Plugin: $RELEASE_DIR/libddos_inspector.so"
     if [ -f "$RELEASE_DIR/libddos_core.a" ]; then
         echo -e "  Core Library: $RELEASE_DIR/libddos_core.a"
@@ -246,10 +246,10 @@ if $BUILD_TOOL; then
     echo -e "  Build Info: $RELEASE_DIR/BUILD_INFO.txt"
     
     # Display release folder contents
-    print_info "📁 Release folder contents:"
+    print_info "[RELEASE] Release folder contents:"
     ls -la "$RELEASE_DIR"
     
-    print_success "🎉 Build completed successfully and artifacts copied to release folder!"
+    print_success "[SUCCESS] Build completed successfully and artifacts copied to release folder!"
     
 else
     print_error "Build failed!"

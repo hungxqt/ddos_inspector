@@ -49,9 +49,9 @@ private:
     
 public:
     DDoSInspectorMetricsExporter(const std::string& bind_address = "0.0.0.0:9091", 
-                                const std::string& stats_file = "/tmp/ddos_inspector_stats")
-        : exposer{bind_address}
-        , registry{std::make_shared<prometheus::Registry>()}
+                                const std::string& stats_file = "/tmp/ddos_inspector/ddos_inspector_stats")
+        : registry{std::make_shared<prometheus::Registry>()}
+        , exposer{bind_address}
         , packets_processed_family{prometheus::BuildCounter()
                                  .Name("ddos_inspector_packets_processed_total")
                                  .Help("Total number of packets processed by DDoS Inspector")
@@ -254,7 +254,7 @@ int main() {
     try {
         // Default stats file path, can be overridden by environment variable
         const char* stats_file_env = std::getenv("DDOS_STATS_FILE");
-        std::string stats_file = stats_file_env ? stats_file_env : "/tmp/ddos_inspector_stats";
+        std::string stats_file = stats_file_env ? stats_file_env : "/tmp/ddos_inspector/ddos_inspector_stats";
         
         const char* bind_address_env = std::getenv("BIND_ADDRESS");
         std::string bind_address = bind_address_env ? bind_address_env : "0.0.0.0:9091";

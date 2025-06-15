@@ -14,6 +14,7 @@
 #include <fstream>
 #include <chrono>
 #include <iostream>
+#include <iomanip>
 
 using namespace snort;
 
@@ -35,8 +36,17 @@ static const Parameter ddos_params[] =
     { "block_timeout", Parameter::PT_INT, "1:3600", "600",
       "IP block timeout in seconds" },
 
-    { "metrics_file", Parameter::PT_STRING, nullptr, "/tmp/ddos_inspector_stats",
+    { "metrics_file", Parameter::PT_STRING, nullptr, "/tmp/ddos_inspector/ddos_inspector_stats",
       "path to metrics output file" },
+
+    { "config_profile", Parameter::PT_STRING, nullptr, "default",
+      "configuration profile: default, strict, permissive, web_server, game_server" },
+
+    { "protected_networks", Parameter::PT_STRING, nullptr, "",
+      "comma-separated list of protected network CIDRs" },
+
+    { "log_level", Parameter::PT_STRING, nullptr, "info",
+      "logging level: debug, info, warning, error" },
 
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
@@ -66,6 +76,12 @@ bool DdosInspectorModule::set(const char* fqn, Value& v, SnortConfig*)
         block_timeout = v.get_uint32();
     else if (v.is("metrics_file"))
         metrics_file = v.get_string();
+    else if (v.is("config_profile"))
+        config_profile = v.get_string();
+    else if (v.is("protected_networks"))
+        protected_networks = v.get_string();
+    else if (v.is("log_level"))
+        log_level = v.get_string();
     else
         return false;
 
@@ -80,8 +96,54 @@ bool DdosInspectorModule::begin(const char*, int, SnortConfig*)
 
 bool DdosInspectorModule::end(const char*, int, SnortConfig*)
 {
+    applyConfigurationProfile();
     std::cout << "\033[0;32m[OK]\033[0m DDoS Inspector Plugin configuration completed successfully" << std::endl;
     return true;
+}
+
+void DdosInspectorModule::applyConfigurationProfile() {
+    std::cout << "\033[0;34m[CONFIG]\033[0m Applying configuration profile: " << config_profile << std::endl;
+    
+    if (config_profile == "strict") {
+        // Strict mode: Lower thresholds, higher sensitivity
+        entropy_threshold = 1.5;
+        ewma_alpha = 0.15;
+        block_timeout = 1800; // 30 minutes
+        connection_threshold = 500;
+        rate_threshold = 25000;
+        std::cout << "  - Applied strict detection thresholds" << std::endl;
+    }
+    else if (config_profile == "permissive") {
+        // Permissive mode: Higher thresholds, lower sensitivity
+        entropy_threshold = 3.0;
+        ewma_alpha = 0.05;
+        block_timeout = 300; // 5 minutes
+        connection_threshold = 2000;
+        rate_threshold = 100000;
+        std::cout << "  - Applied permissive detection thresholds" << std::endl;
+    }
+    else if (config_profile == "web_server") {
+        // Web server optimized: Account for legitimate HTTP bursts
+        entropy_threshold = 2.5;
+        ewma_alpha = 0.08;
+        allow_icmp = false;
+        connection_threshold = 1500;
+        rate_threshold = 75000;
+        std::cout << "  - Applied web server optimized settings" << std::endl;
+    }
+    else if (config_profile == "game_server") {
+        // Game server optimized: Handle UDP bursts, lower latency tolerance
+        entropy_threshold = 1.8;
+        ewma_alpha = 0.2;
+        allow_icmp = true;
+        connection_threshold = 800;
+        rate_threshold = 40000;
+        std::cout << "  - Applied game server optimized settings" << std::endl;
+    }
+    else {
+        // Default profile - no changes needed
+        std::cout << "  - Using default configuration settings" << std::endl;
+    }
 }
 
 //-------------------------------------------------------------------------
@@ -133,6 +195,7 @@ void DdosInspector::writeMetrics()
             if (stats_engine) {
                 metrics_file << "entropy:" << stats_engine->get_entropy() << std::endl;
                 metrics_file << "rate:" << stats_engine->get_current_rate() << std::endl;
+                metrics_file << "baseline_rate:" << stats_engine->get_baseline_rate() << std::endl;
             }
             
             if (behavior_tracker) {
@@ -141,18 +204,25 @@ void DdosInspector::writeMetrics()
             
             if (firewall_action) {
                 metrics_file << "blocked_ips:" << firewall_action->get_blocked_count() << std::endl;
+                metrics_file << "rate_limited_ips:" << firewall_action->get_rate_limited_count() << std::endl;
             }
             
-            // Attack type counters
+            // Attack type counters with enhanced tracking
             metrics_file << "syn_floods:" << syn_flood_detections.load() << std::endl;
             metrics_file << "slowloris_attacks:" << slowloris_detections.load() << std::endl;
             metrics_file << "udp_floods:" << udp_flood_detections.load() << std::endl;
             metrics_file << "icmp_floods:" << icmp_flood_detections.load() << std::endl;
             
-            // Detection timing (in milliseconds)
+            // Performance metrics
             auto detection_time = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - detection_start_time).count();
-            metrics_file << "detection_time:" << detection_time << std::endl;
+            metrics_file << "detection_time_ms:" << detection_time << std::endl;
+            metrics_file << "avg_processing_time_us:" << 
+                (packets_processed.load() > 0 ? total_processing_time_us.load() / packets_processed.load() : 0) << std::endl;
+            metrics_file << "max_processing_time_us:" << max_processing_time_us.load() << std::endl;
+            
+            // Configuration profile info
+            metrics_file << "config_profile:" << log_level << std::endl; // Using log_level as a proxy for now
             
             metrics_file.close();
         }
@@ -163,6 +233,8 @@ void DdosInspector::writeMetrics()
 
 void DdosInspector::eval(Packet* p)
 {
+    auto eval_start = std::chrono::high_resolution_clock::now();
+    
     if (!p || !p->ptrs.ip_api.is_ip())
         return;
 
@@ -236,20 +308,27 @@ void DdosInspector::eval(Packet* p)
         if (attack_info.confidence >= confidence_threshold) {
             incrementAttackCounter(attack_info.type);
             
-            // Progressive blocking based on severity
+            // Progressive blocking with dynamic duration based on severity
             if (attack_info.severity >= AttackInfo::SEVERITY_HIGH) {
-                firewall_action->block(pkt_data.src_ip);
+                int block_duration = calculateBlockDuration(attack_info.severity, attack_info.type);
+                firewall_action->block(pkt_data.src_ip, block_duration);
                 packets_blocked++;
             } else if (attack_info.severity >= AttackInfo::SEVERITY_MEDIUM) {
                 // Rate limit instead of full block for medium severity
                 firewall_action->rate_limit(pkt_data.src_ip, attack_info.severity);
             }
             // Log low severity attacks but don't block
+            logAttackDetection(attack_info, pkt_data, stats_anomaly, behavior_anomaly);
         }
     }
     
     // Update metrics file periodically
     writeMetrics();
+    
+    // Track performance metrics
+    auto eval_end = std::chrono::high_resolution_clock::now();
+    auto processing_time = std::chrono::duration_cast<std::chrono::microseconds>(eval_end - eval_start);
+    updatePerformanceMetrics(processing_time);
 }
 
 AttackInfo DdosInspector::classifyAttack(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly, uint8_t proto) {
@@ -332,23 +411,121 @@ void DdosInspector::incrementAttackCounter(AttackInfo::Type type) {
     }
 }
 
-void DdosInspector::show_stats(std::ostream& os)
-{
-    os << "DDoS Inspector Statistics:\n";
-    os << "  Packets processed: " << packets_processed.load() << "\n";
-    os << "  Packets blocked: " << packets_blocked.load() << "\n";
-    os << "  SYN flood detections: " << syn_flood_detections.load() << "\n";
-    os << "  Slowloris detections: " << slowloris_detections.load() << "\n";
-    os << "  UDP flood detections: " << udp_flood_detections.load() << "\n";
-    os << "  ICMP flood detections: " << icmp_flood_detections.load() << "\n";
-    if (stats_engine)
-    {
-        os << "  Current EWMA: " << stats_engine->get_current_rate() << "\n";
-        os << "  Current Entropy: " << stats_engine->get_entropy() << "\n";
+int DdosInspector::calculateBlockDuration(AttackInfo::Severity severity, AttackInfo::Type type) {
+    // Base durations in seconds
+    int base_duration = 600; // 10 minutes default
+    
+    // Severity multipliers
+    switch (severity) {
+        case AttackInfo::SEVERITY_LOW:
+            base_duration = 300; // 5 minutes
+            break;
+        case AttackInfo::SEVERITY_MEDIUM:
+            base_duration = 600; // 10 minutes
+            break;
+        case AttackInfo::SEVERITY_HIGH:
+            base_duration = 1800; // 30 minutes
+            break;
+        case AttackInfo::SEVERITY_CRITICAL:
+            base_duration = 3600; // 1 hour
+            break;
     }
-    if (firewall_action)
-    {
-        os << "  Blocked IPs count: " << firewall_action->get_blocked_count() << "\n";
+    
+    // Attack type adjustments
+    switch (type) {
+        case AttackInfo::SYN_FLOOD:
+        case AttackInfo::UDP_FLOOD:
+            // Volume attacks get longer blocks
+            base_duration = static_cast<int>(base_duration * 1.5);
+            break;
+        case AttackInfo::SLOWLORIS:
+            // Sophisticated attacks get much longer blocks
+            base_duration = static_cast<int>(base_duration * 2.0);
+            break;
+        case AttackInfo::HTTP_FLOOD:
+            // Standard duration
+            break;
+        default:
+            break;
+    }
+    
+    return base_duration;
+}
+
+void DdosInspector::logAttackDetection(const AttackInfo& attack_info, const PacketData& pkt_data, 
+                                      bool stats_anomaly, bool behavior_anomaly) {
+    // Enhanced logging with detailed attack information
+    std::string attack_type_str;
+    switch (attack_info.type) {
+        case AttackInfo::SYN_FLOOD: attack_type_str = "SYN_FLOOD"; break;
+        case AttackInfo::HTTP_FLOOD: attack_type_str = "HTTP_FLOOD"; break;
+        case AttackInfo::SLOWLORIS: attack_type_str = "SLOWLORIS"; break;
+        case AttackInfo::ACK_FLOOD: attack_type_str = "ACK_FLOOD"; break;
+        case AttackInfo::UDP_FLOOD: attack_type_str = "UDP_FLOOD"; break;
+        case AttackInfo::ICMP_FLOOD: attack_type_str = "ICMP_FLOOD"; break;
+        case AttackInfo::VOLUME_ATTACK: attack_type_str = "VOLUME_ATTACK"; break;
+        case AttackInfo::DNS_AMPLIFICATION: attack_type_str = "DNS_AMPLIFICATION"; break;
+        case AttackInfo::NTP_AMPLIFICATION: attack_type_str = "NTP_AMPLIFICATION"; break;
+        case AttackInfo::REFLECTION_ATTACK: attack_type_str = "REFLECTION_ATTACK"; break;
+        default: attack_type_str = "UNKNOWN"; break;
+    }
+    
+    std::string severity_str;
+    switch (attack_info.severity) {
+        case AttackInfo::SEVERITY_LOW: severity_str = "LOW"; break;
+        case AttackInfo::SEVERITY_MEDIUM: severity_str = "MEDIUM"; break;
+        case AttackInfo::SEVERITY_HIGH: severity_str = "HIGH"; break;
+        case AttackInfo::SEVERITY_CRITICAL: severity_str = "CRITICAL"; break;
+    }
+    
+    // Log to console with color coding
+    std::string color_code;
+    switch (attack_info.severity) {
+        case AttackInfo::SEVERITY_LOW: color_code = "\033[0;33m"; break;    // Yellow
+        case AttackInfo::SEVERITY_MEDIUM: color_code = "\033[0;35m"; break; // Magenta
+        case AttackInfo::SEVERITY_HIGH: color_code = "\033[0;31m"; break;   // Red
+        case AttackInfo::SEVERITY_CRITICAL: color_code = "\033[1;31m"; break; // Bold Red
+    }
+    
+    std::cout << color_code << "[ATTACK DETECTED]\033[0m "
+              << "Type: " << attack_type_str 
+              << " | Severity: " << severity_str
+              << " | Confidence: " << std::fixed << std::setprecision(2) << attack_info.confidence
+              << " | Source: " << pkt_data.src_ip
+              << " | Target: " << pkt_data.dst_ip
+              << " | Size: " << pkt_data.size << " bytes";
+    
+    if (stats_engine) {
+        std::cout << " | Rate: " << std::fixed << std::setprecision(0) << stats_engine->get_current_rate() << " pps"
+                  << " | Entropy: " << std::fixed << std::setprecision(2) << stats_engine->get_entropy();
+    }
+    
+    if (behavior_tracker) {
+        std::cout << " | Connections: " << behavior_tracker->get_connection_count();
+    }
+    
+    std::cout << " | Triggers: ";
+    if (stats_anomaly) std::cout << "STATS ";
+    if (behavior_anomaly) std::cout << "BEHAVIOR ";
+    
+    std::cout << std::endl;
+    
+    // Also log to syslog if available (basic implementation)
+    // In a production environment, you'd want more sophisticated logging
+    // using proper syslog facilities or centralized logging systems
+}
+
+void DdosInspector::updatePerformanceMetrics(std::chrono::microseconds processing_time) {
+    // Update total processing time
+    total_processing_time_us.fetch_add(processing_time.count());
+    
+    // Update maximum processing time
+    uint64_t current_max = max_processing_time_us.load();
+    uint64_t new_time = processing_time.count();
+    
+    while (new_time > current_max && 
+           !max_processing_time_us.compare_exchange_weak(current_max, new_time)) {
+        // CAS loop to update maximum
     }
 }
 

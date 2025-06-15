@@ -186,7 +186,7 @@ list_blocked_ips() {
     if nft list set inet filter "$DDOS_SET" 2>/dev/null | grep -q "elements = {"; then
         nft list set inet filter "$DDOS_SET" | grep -A 100 "elements = {" | grep -v "elements = {" | grep -v "^}" | sed 's/^\s*//' | while read -r line; do
             if [ -n "$line" ]; then
-                echo "  🚫 $line"
+                echo "  [BLOCKED] $line"
             fi
         done
     else
@@ -326,7 +326,7 @@ main() {
     fi
     
     # Header
-    echo "🛡️  DDoS Inspector - nftables Rules Management"
+    echo "[FIREWALL] DDoS Inspector - nftables Rules Management"
     echo "=============================================="
     
     # Check prerequisites for most commands

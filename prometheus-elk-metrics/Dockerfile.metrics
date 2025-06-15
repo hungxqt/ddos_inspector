@@ -43,7 +43,7 @@ RUN mkdir build && cd build && cmake .. && make
 RUN echo '#!/bin/bash\n\
 export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH\n\
 echo "Starting DDoS Inspector Metrics Exporter..."\n\
-echo "Stats file: ${DDOS_STATS_FILE:-/tmp/ddos_inspector_stats}"\n\
+echo "Stats file: ${DDOS_STATS_FILE:-/tmp/ddos_inspector/ddos_inspector_stats}"\n\
 echo "Bind address: ${BIND_ADDRESS:-0.0.0.0:9091}"\n\
 ./build/ddos_metrics_exporter' > start.sh && chmod +x start.sh
 

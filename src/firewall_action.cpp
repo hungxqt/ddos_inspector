@@ -9,6 +9,10 @@ FirewallAction::FirewallAction(int block_timeout_seconds)
 FirewallAction::~FirewallAction() = default;
 
 void FirewallAction::block(const std::string& ip) {
+    block(ip, 0); // Use default duration
+}
+
+void FirewallAction::block(const std::string& ip, int custom_duration_seconds) {
     std::lock_guard<std::mutex> lock(blocked_ips_mutex);
     
     auto now = std::chrono::steady_clock::now();
@@ -17,11 +21,14 @@ void FirewallAction::block(const std::string& ip) {
     if (it == blocked_ips.end() || !it->second.is_blocked) {
         // Block new IP or re-block expired IP
         if (execute_block_command(ip)) {
-            blocked_ips[ip] = {now, true, 0};  // Initialize all fields including rate_limit_level
+            blocked_ips[ip] = {now, true, 0, custom_duration_seconds};
         }
     } else {
-        // Update timestamp for already blocked IP
+        // Update timestamp and duration for already blocked IP
         blocked_ips[ip].blocked_time = now;
+        if (custom_duration_seconds > 0) {
+            blocked_ips[ip].custom_block_duration = custom_duration_seconds;
+        }
     }
     
     // Clean up expired blocks periodically
@@ -57,8 +64,12 @@ void FirewallAction::cleanup_expired_blocks() {
     for (auto it = blocked_ips.begin(); it != blocked_ips.end();) {
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             now - it->second.blocked_time).count();
+        
+        // Use custom duration if set, otherwise use default
+        int effective_timeout = (it->second.custom_block_duration > 0) ? 
+                                it->second.custom_block_duration : block_timeout;
             
-        if (elapsed > block_timeout && it->second.is_blocked) {
+        if (elapsed > effective_timeout && it->second.is_blocked) {
             if (execute_unblock_command(it->first)) {
                 it = blocked_ips.erase(it);
             } else {
@@ -112,12 +123,15 @@ bool FirewallAction::is_blocked(const std::string& ip) const {
         return false;
     }
     
-    // Check if the block has expired
+    // Check if the block has expired using custom or default timeout
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         now - it->second.blocked_time).count();
     
-    return it->second.is_blocked && (elapsed <= block_timeout);
+    int effective_timeout = (it->second.custom_block_duration > 0) ? 
+                            it->second.custom_block_duration : block_timeout;
+    
+    return it->second.is_blocked && (elapsed <= effective_timeout);
 }
 
 void FirewallAction::rate_limit(const std::string& ip, int severity_level) {
@@ -129,7 +143,7 @@ void FirewallAction::rate_limit(const std::string& ip, int severity_level) {
     if (it == blocked_ips.end() || it->second.rate_limit_level < severity_level) {
         // Apply new rate limit or upgrade existing one
         if (execute_rate_limit_command(ip, severity_level)) {
-            blocked_ips[ip] = {now, false, severity_level};
+            blocked_ips[ip] = {now, false, severity_level, 0};
         }
     } else {
         // Update timestamp for existing rate limit
