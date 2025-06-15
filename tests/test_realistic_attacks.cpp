@@ -132,10 +132,10 @@ TEST_F(RealisticAttackTest, MassiveSynFloodSimulation) {
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                     detection_time - start_time).count();
                 
-                std::cout << "SYN flood detected after " << elapsed << "ms" << std::endl;
+                std::cout << "SYN flood detected after " << elapsed << "ms" << '\n';
                 std::cout << "Packets processed: " << (botnet_ips.size() * i + 
                     std::distance(botnet_ips.begin(), 
-                    std::find(botnet_ips.begin(), botnet_ips.end(), ip))) << std::endl;
+                    std::find(botnet_ips.begin(), botnet_ips.end(), ip))) << '\n';
                 break;
             }
         }
@@ -169,7 +169,7 @@ TEST_F(RealisticAttackTest, LowAndSlowHTTPFlood) {
             if (behavioral_detection || statistical_detection) {
                 attack_detected = true;
                 std::cout << "HTTP flood detected from IP: " << ip 
-                         << " at request " << i << std::endl;
+                         << " at request " << i << '\n';
                 break;
             }
         }
@@ -273,7 +273,7 @@ TEST_F(RealisticAttackTest, EvasionTechniquesSimulation) {
             if (behavioral_detection || statistical_detection) {
                 evasion_defeated = true;
                 std::cout << "Evasive attack detected despite randomization at packet " 
-                         << i << " from IP " << ip << std::endl;
+                         << i << " from IP " << ip << '\n';
                 break;
             }
         }
@@ -341,7 +341,7 @@ TEST_F(RealisticAttackTest, FlashCrowdVsAttackDistinction) {
     
     EXPECT_TRUE(attack_detected) << "Should detect actual attack patterns";
     
-    std::cout << "Flash crowd distinction results:" << std::endl;
-    std::cout << "  False positive on legit traffic: " << (false_positive ? "YES" : "NO") << std::endl;
-    std::cout << "  Attack detection: " << (attack_detected ? "YES" : "NO") << std::endl;
+    std::cout << "Flash crowd distinction results:" << '\n';
+    std::cout << "  False positive on legit traffic: " << (false_positive ? "YES" : "NO") << '\n';
+    std::cout << "  Attack detection: " << (attack_detected ? "YES" : "NO") << '\n';
 }

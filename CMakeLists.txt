@@ -9,6 +9,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Generate compile_commands.json for IDE support (clangd, etc.)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Enable testing support
 enable_testing()
 
@@ -178,6 +181,11 @@ if(BUILD_TESTING)
     # Realistic attack simulation tests (conditional)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realistic_attacks.cpp")
         add_component_test(test_realistic_attacks tests/test_realistic_attacks.cpp)
+    endif()
+
+    # Normal traffic simulation tests (conditional)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_normal_traffic.cpp")
+        add_component_test(test_normal_traffic tests/test_normal_traffic.cpp)
     endif()
 
     # Add test aliases for convenience

@@ -16,6 +16,8 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
+#include <thread>
+#include <mutex>
 #include "packet_data.hpp"
 
 // Forward declarations
@@ -25,7 +27,7 @@ class FirewallAction;
 
 // Attack classification structures enhanced for Snort 3.8.1.0
 struct AttackInfo {
-    enum Type { 
+    enum Type : std::uint8_t { 
         SYN_FLOOD, 
         HTTP_FLOOD, 
         SLOWLORIS, 
@@ -39,7 +41,7 @@ struct AttackInfo {
         UNKNOWN 
     };
     
-    enum Severity { 
+    enum Severity : std::uint8_t { 
         SEVERITY_LOW = 1, 
         SEVERITY_MEDIUM = 2, 
         SEVERITY_HIGH = 3, 
@@ -77,11 +79,16 @@ public:
     bool allow_icmp = false;
     bool enable_amplification_detection = true;
     bool enable_adaptive_thresholds = true;
+    bool enable_ipv6 = true;
+    bool enable_fragmentation_detection = true;
+    bool tarpit_enabled = true;
+    bool tcp_reset_enabled = true;
     double entropy_threshold = 2.0;
     double ewma_alpha = 0.1;
     uint32_t block_timeout = 600; // seconds
     uint32_t connection_threshold = 1000;
     uint32_t rate_threshold = 50000; // packets per second
+    uint32_t max_tracked_ips = 10000;
     std::string metrics_file = "/tmp/ddos_inspector/ddos_inspector_stats";
     std::string log_level = "info";
     std::string config_profile = "default";
@@ -101,6 +108,15 @@ public:
     bool configure(snort::SnortConfig*) override { return true; }
 
 private:
+    // TODO: IMPROVEMENT - Add adaptive threshold management
+    struct AdaptiveThresholds {
+        double entropy_threshold = 2.0;
+        double rate_threshold = 50000.0;
+        std::chrono::steady_clock::time_point last_update;
+        double baseline_entropy = 2.0;
+        double baseline_rate = 1000.0;
+    } adaptive_thresholds;
+
     // Configuration
     bool allow_icmp;
     bool enable_amplification_detection;
@@ -132,12 +148,31 @@ private:
     std::atomic<uint64_t> total_processing_time_us{0};
     std::atomic<uint64_t> max_processing_time_us{0};
     
+    // Background metrics thread
+    std::atomic<bool> metrics_running{false};
+    std::thread metrics_thread;
+    std::mutex metrics_mutex;
+    
+    // Fragment flood detection
+    std::atomic<uint32_t> fragment_count{0};
+    
     // Enhanced detection methods
     AttackInfo classifyAttack(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly, uint8_t proto);
     bool detectAmplificationAttack(const PacketData& pkt_data, uint8_t proto);
+    bool detectFragmentFlood(snort::Packet* p);
     void incrementAttackCounter(AttackInfo::Type type);
     void writeMetrics();
+    void writeMetricsBackground(); // Background metrics writing
+    void startMetricsThread();
+    void stopMetricsThread();
     void updatePerformanceMetrics(std::chrono::microseconds processing_time);
+    
+    // Fragment tracking
+    struct FragmentStats {
+        uint32_t count = 0;
+        std::chrono::steady_clock::time_point last_seen;
+    };
+    std::unordered_map<std::string, FragmentStats> fragment_stats;
     
     // Dynamic mitigation methods
     int calculateBlockDuration(AttackInfo::Severity severity, AttackInfo::Type type);

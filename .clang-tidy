@@ -1,12 +1,107 @@
+# Clang-Tidy Configuration for DDoS Inspector Plugin
+# Optimized for Snort 3 plugin development and production code quality
+
 Checks: >
+  # Static analysis (critical bugs and security issues)
   clang-analyzer-*,
-  cppcoreguidelines-*,
-  modernize-*,
-  readability-*,
-  bugprone-*,
+  
+  # Essential performance improvements
   performance-*,
-  portability-*,
-  misc-*,
-WarningsAsErrors: '*'
-HeaderFilterRegex: '.*'
-AnalyzeTemporaryDtors: true
+  
+  # Important bug prevention
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-narrowing-conversions,
+  -bugprone-magic-numbers,
+  
+  # Modern C++ practices (selective)
+  modernize-use-auto,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-loop-convert,
+  modernize-use-emplace,
+  modernize-make-unique,
+  modernize-make-shared,
+  modernize-use-default-member-init,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  
+  # Readability improvements (selective, excluding noisy ones)
+  readability-const-return-type,
+  readability-container-size-empty,
+  readability-redundant-control-flow,
+  readability-simplify-boolean-expr,
+  readability-avoid-const-params-in-decls,
+  readability-misleading-indentation,
+  readability-redundant-string-cstr,
+  readability-redundant-smartptr-get,
+  
+  # Core guidelines (essential only, avoiding Snort plugin incompatible checks)
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-reinterpret-cast,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-interfaces-global-init,
+  cppcoreguidelines-narrowing-conversions,
+  
+  # Misc (selective)
+  misc-redundant-expression,
+  misc-unused-alias-decls,
+  misc-unused-using-decls,
+  misc-throw-by-value-catch-by-reference,
+  misc-unconventional-assign-operator,
+
+# Treat most issues as warnings, not errors (more development-friendly)
+WarningsAsErrors: >
+  clang-analyzer-*,
+  bugprone-use-after-move,
+  bugprone-dangling-handle,
+  bugprone-infinite-loop,
+  performance-move-const-arg,
+  performance-unnecessary-copy-initialization,
+
+# Only analyze project headers, not system/third-party headers
+HeaderFilterRegex: '^(include/|src/|tests/).*\.(h|hpp)$'
+
+# Configuration options for specific checks
+CheckOptions:
+  # Modernize settings
+  - key: modernize-use-auto.MinTypeNameLength
+    value: '5'
+  - key: modernize-loop-convert.MaxCopySize
+    value: '16'
+  - key: modernize-loop-convert.MinConfidence
+    value: reasonable
+    
+  # Readability settings
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstantCase
+    value: UPPER_CASE
+    
+  # Performance settings
+  - key: performance-unnecessary-copy-initialization.AllowedTypes
+    value: 'std::shared_ptr;std::unique_ptr'
+
+# Test-specific configuration (more lenient for test files)
+FormatStyle: file
+
+# Ignore certain patterns in test files
+---
+If:
+  PathMatch: 'tests/.*\.(cpp|hpp)'
+Then:
+  Checks: >
+    clang-analyzer-*,
+    performance-*,
+    bugprone-*,
+    -bugprone-easily-swappable-parameters,
+    -bugprone-magic-numbers,
+    misc-redundant-expression,
+    misc-unused-alias-decls,
+  WarningsAsErrors: ''

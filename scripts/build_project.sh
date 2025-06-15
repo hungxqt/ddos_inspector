@@ -249,7 +249,7 @@ if $BUILD_TOOL; then
     print_info "[RELEASE] Release folder contents:"
     ls -la "$RELEASE_DIR"
     
-    print_success "[SUCCESS] Build completed successfully and artifacts copied to release folder!"
+    print_success "Build completed successfully and artifacts copied to release folder!"
     
 else
     print_error "Build failed!"

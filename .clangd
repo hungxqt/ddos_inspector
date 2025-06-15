@@ -1,0 +1,98 @@
+CompileFlags:
+  CompilationDatabase: .
+  Add:
+    - -DTESTING
+    - -D_GLIBCXX_USE_CXX11_ABI=1
+    - -DDEBUG
+    - -Iinclude
+    - -I/usr/local/snort3/include/snort
+    - -I/usr/local/include/gtest
+    - -std=c++20
+    - -fPIC
+    - -pthread
+    - -Wno-unused-parameter
+    - -Wno-missing-field-initializers
+    - -Wno-unused-variable
+  Remove:
+    - -march=native
+    - -mtune=native
+    - -flto
+    - -ffast-math
+    - -funroll-loops
+    - -fvisibility=hidden
+    - -g
+    - -O0
+    - -O1
+    - -O2
+    - -O3
+    - -Os
+    - -Oz
+
+Diagnostics:
+  Suppress:
+    - unused-parameter
+    - unused-variable
+    - unused-function
+    - unused-private-field
+    - sign-conversion
+    - implicit-int-conversion
+    - shorten-64-to-32
+    - missing-field-initializers
+    - old-style-cast
+    - zero-as-null-pointer-constant
+    - gnu-zero-variadic-macro-arguments
+    - c++98-compat
+    - c++98-compat-pedantic
+  ClangTidy:
+    Add:
+      - performance-*
+      - modernize-use-auto
+      - modernize-use-nullptr
+      - modernize-use-override
+      - modernize-loop-convert
+      - modernize-use-emplace
+      - modernize-make-unique
+      - modernize-make-shared
+      - bugprone-use-after-move
+      - bugprone-dangling-handle
+      - bugprone-infinite-loop
+      - bugprone-suspicious-include
+      - bugprone-assert-side-effect
+      - readability-const-return-type
+      - readability-redundant-control-flow
+      - readability-simplify-boolean-expr
+      - readability-avoid-const-params-in-decls
+    Remove:
+      - modernize-use-trailing-return-type
+      - modernize-avoid-c-arrays
+      - readability-identifier-length
+      - readability-magic-numbers
+      - readability-function-cognitive-complexity
+      - readability-uppercase-literal-suffix
+      - cppcoreguidelines-*
+
+# Indexing configuration for better performance
+Index:
+  # Build index in background for faster responses
+  Background: Build
+  
+  # Include standard library symbols
+  StandardLibrary: true
+
+# Editor integration features
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: false
+  Designators: true
+
+Hover:
+  ShowAKA: true
+  
+Completion:
+  AllScopes: true
+  
+# Semantic highlighting
+SemanticTokens:
+  DisabledKinds: []
+  DisabledModifiers: []

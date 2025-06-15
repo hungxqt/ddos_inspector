@@ -163,6 +163,9 @@ TEST_F(FirewallActionDetailedTest, HighVolumeBlocking) {
     const int num_ips = 1000;
     std::vector<std::string> ip_list;
     
+    // Pre-allocate capacity to avoid reallocations during push_back
+    ip_list.reserve(num_ips);
+    
     // Generate many IP addresses
     for (int i = 0; i < num_ips; i++) {
         std::string ip = "10.0." + std::to_string(i / 256) + "." + std::to_string(i % 256);
@@ -189,6 +192,9 @@ TEST_F(FirewallActionDetailedTest, ConcurrentAccess) {
     const int num_threads = 10;
     const int ips_per_thread = 100;
     std::vector<std::thread> threads;
+    
+    // Pre-allocate capacity to avoid reallocations during emplace_back
+    threads.reserve(num_threads);
     
     // Launch multiple threads that block IPs concurrently
     for (int t = 0; t < num_threads; t++) {

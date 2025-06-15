@@ -341,6 +341,7 @@ TEST(BehaviorTrackerDetailedTest, DistributedAttackDetection) {
     
     // Now test a real distributed attack with many IPs
     std::vector<std::string> attack_ips;
+    attack_ips.reserve(15);  // Pre-allocate capacity for performance
     for (int i = 0; i < 15; i++) {  // 15 attacking IPs (more than the 10 threshold)
         attack_ips.push_back("10.0.1." + std::to_string(i + 1));
     }

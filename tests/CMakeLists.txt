@@ -17,3 +17,16 @@ target_link_libraries(test_realistic_attacks
 
 # Add to test list
 add_test(NAME RealisticAttackTests COMMAND test_realistic_attacks)
+
+# Add normal traffic test
+add_executable(test_normal_traffic test_normal_traffic.cpp)
+target_link_libraries(test_normal_traffic 
+    behavior_tracker
+    stats_engine
+    gtest 
+    gtest_main
+    pthread
+)
+
+# Add to test list
+add_test(NAME NormalTrafficTests COMMAND test_normal_traffic)
