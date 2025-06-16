@@ -196,6 +196,7 @@ DdosInspector::DdosInspector(DdosInspectorModule* mod)
     
     allow_icmp = mod->allow_icmp;
     metrics_file_path = mod->metrics_file;
+    config_profile = mod->config_profile;
     
     // Initialize components with configuration
     stats_engine = std::make_unique<StatsEngine>(mod->entropy_threshold, mod->ewma_alpha);
@@ -226,13 +227,9 @@ void DdosInspector::writeMetrics()
     auto now = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_metrics_update);
     
-    // TODO: IMPROVEMENT - Thread safety issue
-    // WARNING: File I/O in packet processing path can cause performance issues
-    // Suggested: Move to background thread or use lock-free queue
-    
-    // Update metrics every 5 seconds
+    // Update metrics every 5 seconds (handled by background thread)
     if (duration.count() >= 5) {
-        // TODO: IMPROVEMENT - Use async I/O or background thread
+        std::lock_guard<std::mutex> lock(metrics_mutex);
         std::ofstream metrics_file(metrics_file_path);
         if (metrics_file.is_open()) {
             // Write current statistics
@@ -252,6 +249,10 @@ void DdosInspector::writeMetrics()
             if (firewall_action) {
                 metrics_file << "blocked_ips:" << firewall_action->get_blocked_count() << '\n';
                 metrics_file << "rate_limited_ips:" << firewall_action->get_rate_limited_count() << '\n';
+                
+                // Write separate files for blocked and rate-limited IPs
+                writeBlockedIpsFile(firewall_action->get_blocked_ips());
+                writeRateLimitedIpsFile(firewall_action->get_rate_limited_ips());
             }
             
             // Attack type counters with enhanced tracking
@@ -270,7 +271,7 @@ void DdosInspector::writeMetrics()
             metrics_file << "max_processing_time_us:" << max_processing_time_us.load() << '\n';
             
             // Configuration profile info
-            metrics_file << "config_profile:" << log_level << '\n'; // Using log_level as a proxy for now
+            metrics_file << "config_profile:" << config_profile << '\n';
             
             metrics_file.close();
         }
@@ -552,6 +553,21 @@ void DdosInspector::incrementAttackCounter(AttackInfo::Type type) {
         case AttackInfo::ICMP_FLOOD:
             icmp_flood_detections++;
             break;
+        case AttackInfo::DNS_AMPLIFICATION:
+        case AttackInfo::NTP_AMPLIFICATION:
+        case AttackInfo::REFLECTION_ATTACK:
+            amplification_detections++;
+            break;
+        case AttackInfo::PULSE_ATTACK:
+        case AttackInfo::PROTOCOL_MIXING:
+        case AttackInfo::GEO_DISTRIBUTED:
+        case AttackInfo::LOW_AND_SLOW:
+        case AttackInfo::RANDOMIZED_PAYLOADS:
+        case AttackInfo::LEGITIMATE_MIXING:
+        case AttackInfo::DYNAMIC_ROTATION:
+        case AttackInfo::VOLUME_ATTACK:
+            // Advanced attacks - could add separate counters if needed
+            break;
         default:
             break;
     }
@@ -826,6 +842,60 @@ void DdosInspector::stopMetricsThread() {
     }
 }
 
+void DdosInspector::writeBlockedIpsFile(
+    const std::vector<std::string> &blocked_ips) {
+  std::string blocked_ips_file = "/var/log/ddos_inspector/blocked_ips.txt";
+  std::ofstream file(blocked_ips_file);
+
+  if (file.is_open()) {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+
+    file << "# DDoS Inspector - Blocked IPs List\n";
+    file << "# Last updated: " << std::ctime(&time_t);
+    file << "# Format: IP_ADDRESS (remaining: XXXs, type: ATTACK_TYPE)\n";
+    file << "# Total blocked IPs: " << blocked_ips.size() << "\n\n";
+
+    if (blocked_ips.empty()) {
+      file << "# No IPs currently blocked\n";
+    } else {
+      for (const auto &ip_info : blocked_ips) {
+        file << ip_info << "\n";
+      }
+    }
+
+    file.close();
+  }
+}
+
+void DdosInspector::writeRateLimitedIpsFile(
+    const std::vector<std::string> &rate_limited_ips) {
+  std::string rate_limited_file =
+      "/var/log/ddos_inspector/rate_limited_ips.txt";
+  std::ofstream file(rate_limited_file);
+
+  if (file.is_open()) {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+
+    file << "# DDoS Inspector - Rate Limited IPs List\n";
+    file << "# Last updated: " << std::ctime(&time_t);
+    file << "# Format: IP_ADDRESS (level X)\n";
+    file << "# Rate limit levels: 1=10/sec, 2=5/sec, 3=2/sec, 4=1/sec\n";
+    file << "# Total rate limited IPs: " << rate_limited_ips.size() << "\n\n";
+
+    if (rate_limited_ips.empty()) {
+      file << "# No IPs currently rate limited\n";
+    } else {
+      for (const auto &ip_info : rate_limited_ips) {
+        file << ip_info << "\n";
+      }
+    }
+
+    file.close();
+  }
+}
+
 //-------------------------------------------------------------------------
 // api stuff
 //-------------------------------------------------------------------------
@@ -888,4 +958,3 @@ SO_PUBLIC const BaseApi* snort_plugins[] =
     &ddos_api.base,
     nullptr
 };
-

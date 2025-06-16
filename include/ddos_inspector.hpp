@@ -131,6 +131,7 @@ private:
     uint32_t rate_threshold;
     std::string metrics_file_path;
     std::string log_level;
+    std::string config_profile;
     
     // Core components
     std::unique_ptr<StatsEngine> stats_engine;
@@ -184,6 +185,10 @@ private:
     int calculateBlockDuration(AttackInfo::Severity severity, AttackInfo::Type type);
     void logAttackDetection(const AttackInfo& attack_info, const PacketData& pkt_data, 
                            bool stats_anomaly, bool behavior_anomaly);
+    
+    // IP list file management
+    void writeBlockedIpsFile(const std::vector<std::string>& blocked_ips);
+    void writeRateLimitedIpsFile(const std::vector<std::string>& rate_limited_ips);
     
     // Adaptive threshold management
     void updateAdaptiveThresholds();

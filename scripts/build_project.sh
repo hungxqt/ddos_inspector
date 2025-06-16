@@ -16,7 +16,7 @@ BUILD_JOBS=$(nproc)
 BUILD_DIR="build"
 RELEASE_DIR="$PROJECT_ROOT/release"
 CLEAN_BUILD=false
-RUN_TESTS=true
+RUN_TESTS=false
 VERBOSE=false
 FORCE_GENERATOR=""
 

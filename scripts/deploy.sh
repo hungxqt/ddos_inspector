@@ -101,13 +101,12 @@ show_help() {
 create_directories() {
     echo -e "${BLUE}[SETUP] Creating required directories...${NC}"
     
-    if [ ! -d "/tmp/ddos_inspector" ]; then
-        sudo mkdir -p /tmp/ddos_inspector
-        sudo chown "$(whoami):$(whoami)" /tmp/ddos_inspector
-        echo -e "${GREEN}[SUCCESS] Created /tmp/ddos_inspector directory${NC}"
-    else
-        echo -e "${GREEN}[INFO] /tmp/ddos_inspector directory already exists${NC}"
-    fi
+    # Create log directories with proper permissions
+    sudo mkdir -p /var/log/snort
+    sudo mkdir -p /var/log/ddos_inspector
+    sudo chmod 755 /var/log/snort
+    sudo chmod 755 /var/log/ddos_inspector
+    echo -e "${GREEN}[SUCCESS] Created log directories${NC}"
 }
 
 # Function to start snort with DDoS configuration
@@ -126,7 +125,7 @@ start_snort_ddos() {
     
     # Start snort in background with the specified command using the interface argument
     echo "    Starting Snort on interface ${NETWORK_INTERFACE}..."
-    nohup sudo snort -c /etc/snort/snort_ddos_config.lua --plugin-path /usr/local/lib/snort3_extra_plugins -v -i ${NETWORK_INTERFACE} -A alert_fast > /tmp/ddos_inspector/snort.log 2>&1 &
+    nohup sudo snort -c /etc/snort/snort_ddos_config.lua --plugin-path /usr/local/lib/snort3_extra_plugins -v -i ${NETWORK_INTERFACE} -A alert_fast > /var/log/snort/snort.log 2>&1 &
     
     # Give it more time to start
     sleep 5
@@ -134,15 +133,15 @@ start_snort_ddos() {
     # Verify snort started successfully using a more robust check
     if pgrep snort > /dev/null; then
         echo -e "${GREEN}[SUCCESS] Snort started successfully on interface ${NETWORK_INTERFACE}${NC}"
-        echo -e "${BLUE}[INFO] Snort logs available at: /tmp/ddos_inspector/snort.log${NC}"
-        echo -e "${BLUE}[INFO] To monitor: tail -f /tmp/ddos_inspector/snort.log${NC}"
+        echo -e "${BLUE}[INFO] Snort logs available at: /var/log/snort/snort.log${NC}"
+        echo -e "${BLUE}[INFO] To monitor: tail -f /var/log/snort/snort.log${NC}"
         echo -e "${BLUE}[INFO] Running processes:${NC}"
         ps aux | grep snort | grep -v grep | head -3
     else
         echo -e "${RED}[ERROR] Failed to start Snort${NC}"
-        echo -e "${YELLOW}[DEBUG] Check the log file: /tmp/ddos_inspector/snort.log${NC}"
+        echo -e "${YELLOW}[DEBUG] Check the log file: /var/log/snort/snort.log${NC}"
         echo -e "${YELLOW}[DEBUG] Last few lines of log:${NC}"
-        tail -10 /tmp/ddos_inspector/snort.log
+        tail -10 /var/log/snort/snort.log
     fi
 }
 

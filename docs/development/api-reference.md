@@ -41,7 +41,7 @@ ddos_inspector = {
     worker_threads = 1,           -- Number of worker threads
     
     -- Output Configuration
-    metrics_file = "/tmp/ddos_inspector_stats",
+    metrics_file = "/var/log/ddos_inspector/ddos_inspector_stats",
     log_file = "/var/log/snort/ddos_inspector.log",
     alert_mode = "fast",          -- "fast", "full", or "json"
     log_level = "info",           -- "debug", "info", "warn", "error"

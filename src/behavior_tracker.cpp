@@ -797,25 +797,39 @@ bool BehaviorTracker::detectPulseAttack(const Behavior& b) {
 
 bool BehaviorTracker::detectProtocolMixing(const Behavior& b) {
     // Protocol mixing: Combining TCP/UDP/ICMP simultaneously to confuse detection
-    int protocol_types = 0;
+    if (b.total_packets < 100) return false; // Need significant sample
     
-    // Count different protocol types seen from this IP
-    if (b.syn_count > 0) protocol_types++;       // TCP SYN
-    if (b.ack_count > 0) protocol_types++;       // TCP ACK  
-    if (b.http_requests > 0) protocol_types++;   // HTTP
-    // Note: In real implementation, would also check UDP, ICMP, etc.
+    int distinct_attack_types = 0;
     
-    // Flag as protocol mixing if using 2+ protocols with significant traffic
-    if (protocol_types >= 2 && b.total_packets > 100) {
-        // Additional check: ensure it's not just normal mixed traffic
-        double largest_protocol_ratio = std::max({
-            static_cast<double>(b.syn_count) / b.total_packets,
-            static_cast<double>(b.ack_count) / b.total_packets, 
-            static_cast<double>(b.http_requests) / b.total_packets
-        });
+    // Count distinct attack-oriented protocol types with higher thresholds
+    if (b.syn_count > 50) distinct_attack_types++;        // TCP SYN floods (higher threshold)
+    if (b.ack_count > 50) distinct_attack_types++;        // TCP ACK floods (higher threshold)
+    if (b.http_requests > 20) distinct_attack_types++;    // HTTP floods
+    // Note: In real implementation, would also check UDP floods, ICMP floods, etc.
+    
+    // Only flag as protocol mixing if truly using multiple ATTACK types
+    if (distinct_attack_types >= 2) {
+        // Strict validation: ensure it's not just SYN flood with responses
+        double syn_ratio = static_cast<double>(b.syn_count) / b.total_packets;
+        double ack_ratio = static_cast<double>(b.ack_count) / b.total_packets;
+        double http_ratio = static_cast<double>(b.http_requests) / b.total_packets;
         
-        // If no single protocol dominates (>80%), likely mixing attack
-        return largest_protocol_ratio < 0.8;
+        // If SYN dominates heavily (>80%), it's definitely a SYN flood, not mixing
+        if (syn_ratio > 0.8) {
+            return false; // This is a SYN flood, not protocol mixing
+        }
+        
+        // Even stricter: require balanced attack types for true protocol mixing
+        // No single protocol should dominate more than 50%
+        double max_ratio = std::max({syn_ratio, ack_ratio, http_ratio});
+        
+        // Require true diversity - at least 2 protocols with significant representation
+        int significant_protocols = 0;
+        if (syn_ratio > 0.2) significant_protocols++;
+        if (ack_ratio > 0.2) significant_protocols++;  
+        if (http_ratio > 0.2) significant_protocols++;
+        
+        return (max_ratio < 0.5 && significant_protocols >= 2);
     }
     
     return false;
@@ -1226,15 +1240,8 @@ int BehaviorTracker::calculateAdaptiveThreshold(const Behavior& b, double legiti
 std::vector<std::string> BehaviorTracker::getLastDetectedPatterns() const {
     std::lock_guard<std::mutex> lock(patterns_mutex);
     
-    // Check if patterns are still valid (within last 10 seconds)
-    auto now = std::chrono::steady_clock::now();
-    auto pattern_age = std::chrono::duration_cast<std::chrono::seconds>(now - patterns_timestamp);
-    
-    if (pattern_age.count() > 10) {
-        // Patterns are too old, return empty to allow fallback to basic classification
-        return {};
-    }
-    
+    // Return patterns without timestamp expiration for now to ensure consistency
+    // Patterns will be updated naturally when new detection cycles run
     return last_detected_patterns;
 }
 

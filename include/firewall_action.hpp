@@ -60,6 +60,8 @@ public:
     bool is_rate_limited(const std::string& ip) const;
     size_t get_blocked_count() const;
     size_t get_rate_limited_count() const;
+    std::vector<std::string> get_rate_limited_ips() const; // New method to list rate-limited IPs
+    std::vector<std::string> get_blocked_ips() const; // New method to list blocked IPs
     ThreatLevel get_current_threat_level() const;
     
     // Maintenance

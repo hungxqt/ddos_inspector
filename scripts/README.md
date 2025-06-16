@@ -387,7 +387,7 @@ docker logs -f ddos_inspector
 
 ```bash
 # Live statistics
-watch -n 1 'cat /tmp/ddos_inspector/ddos_inspector_stats'
+watch -n 1 'cat /var/log/ddos_inspector/ddos_inspector_stats'
 
 # Service status
 sudo systemctl status snort-ddos-inspector

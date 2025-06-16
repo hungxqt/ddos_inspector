@@ -164,9 +164,8 @@ bool FirewallAction::execute_block_command(const std::string& ip) {
         std::system("nft add set inet filter ddos_ip_set '{ type ipv4_addr; flags dynamic,timeout; timeout 10m; }' 2>/dev/null || true");
         std::system("nft add rule inet filter input ip saddr @ddos_ip_set drop 2>/dev/null || true");
         
-        // Now block the IP
-        std::string cmd = "nft add element inet filter ddos_ip_set { " + ip + " } 2>/dev/null || "
-                         "iptables -I INPUT -s " + ip + " -j DROP 2>/dev/null";
+        // Now block the IP using nftables
+        std::string cmd = "nft add element inet filter ddos_ip_set { " + ip + " }";
         
         int result = std::system(cmd.c_str());
         return result == 0;
@@ -179,8 +178,7 @@ bool FirewallAction::execute_unblock_command(const std::string& ip) {
     #ifdef TESTING
         return true;
     #else
-        std::string cmd = "nft delete element inet filter ddos_ip_set { " + ip + " } 2>/dev/null || "
-                         "iptables -D INPUT -s " + ip + " -j DROP 2>/dev/null";
+        std::string cmd = "nft delete element inet filter ddos_ip_set { " + ip + " }";
         
         int result = std::system(cmd.c_str());
         return result == 0;
@@ -271,21 +269,24 @@ void FirewallAction::rate_limit(const std::string& ip, int severity_level) {
 }
 
 void FirewallAction::apply_tarpit(const std::string& ip) {
-    // Tarpit implementation - slow down connections from suspicious IPs
+    // Tarpit implementation using nftables - slow down connections from suspicious IPs
     #ifndef TESTING
-        std::string cmd = "iptables -I INPUT -s " + ip + 
-                         " -j TARPIT 2>/dev/null || " +
-                         "iptables -I INPUT -s " + ip + 
-                         " -m limit --limit 1/s -j ACCEPT";
+        // Use nftables limit rate to implement tarpit-like behavior
+        std::string cmd = "nft insert rule inet filter input ip saddr " + ip + 
+                         " limit rate 1/second accept";
         std::system(cmd.c_str());
+        
+        // Add drop rule after the limit
+        std::string drop_cmd = "nft insert rule inet filter input ip saddr " + ip + " drop";
+        std::system(drop_cmd.c_str());
     #endif
 }
 
 void FirewallAction::send_tcp_reset(const std::string& ip) {
-    // Send TCP RST to reset connections from malicious IPs
+    // Send TCP RST using nftables to reset connections from malicious IPs
     #ifndef TESTING
-        std::string cmd = "iptables -I INPUT -s " + ip + 
-                         " -p tcp -j REJECT --reject-with tcp-reset";
+        std::string cmd = "nft insert rule inet filter input ip saddr " + ip + 
+                         " tcp flags & (fin|syn|rst|ack) == syn reject with tcp reset";
         std::system(cmd.c_str());
     #endif
 }
@@ -302,31 +303,65 @@ size_t FirewallAction::get_rate_limited_count() const {
     return count;
 }
 
+std::vector<std::string> FirewallAction::get_rate_limited_ips() const {
+    std::lock_guard<std::mutex> lock(blocked_ips_mutex);
+    
+    std::vector<std::string> rate_limited_ips;
+    for (const auto& [ip, info] : blocked_ips) {
+        if (info.rate_limit_level > 0 && !info.is_blocked) {
+            rate_limited_ips.push_back(ip + " (level " + std::to_string(info.rate_limit_level) + ")");
+        }
+    }
+    return rate_limited_ips;
+}
+
+std::vector<std::string> FirewallAction::get_blocked_ips() const {
+    std::lock_guard<std::mutex> lock(blocked_ips_mutex);
+    
+    std::vector<std::string> blocked_list;
+    auto now = std::chrono::steady_clock::now();
+    
+    for (const auto& [ip, info] : blocked_ips) {
+        if (info.is_blocked) {
+            // Calculate remaining time
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - info.blocked_time).count();
+            int effective_timeout = (info.custom_block_duration > 0) ? info.custom_block_duration : block_timeout;
+            int remaining = std::max(0, effective_timeout - static_cast<int>(elapsed));
+            
+            blocked_list.push_back(ip + " (remaining: " + std::to_string(remaining) + "s, type: " + info.attack_type + ")");
+        }
+    }
+    return blocked_list;
+}
+
 bool FirewallAction::execute_rate_limit_command(const std::string& ip, int severity) {
     #ifdef TESTING
         return true;
     #else
-        // Create rate limiting rules based on severity
+        // Create rate limiting rules using nftables based on severity
         std::string rate_limit;
         switch (severity) {
-            case 1: rate_limit = "10/sec"; break;  // Low severity
-            case 2: rate_limit = "5/sec"; break;   // Medium severity  
-            case 3: rate_limit = "2/sec"; break;   // High severity
-            case 4: rate_limit = "1/sec"; break;   // Critical severity
-            default: rate_limit = "5/sec"; break;
+            case 1: rate_limit = "10/second"; break;  // Low severity
+            case 2: rate_limit = "5/second"; break;   // Medium severity  
+            case 3: rate_limit = "2/second"; break;   // High severity
+            case 4: rate_limit = "1/second"; break;   // Critical severity
+            default: rate_limit = "5/second"; break;
         }
         
-        // Remove any existing rules first
-        std::string remove_cmd = "iptables -D INPUT -s " + ip + " -m limit --limit " + 
-                                rate_limit + " -j ACCEPT 2>/dev/null || true";
+        // Use nftables for consistency with blocking rules
+        // First, remove any existing rate limit rule for this IP
+        std::string remove_cmd = "nft delete rule inet filter input ip saddr " + ip + " limit rate " + rate_limit + " accept 2>/dev/null || true";
         std::system(remove_cmd.c_str());
         
-        // Add new rate limiting rule
-        std::string cmd = "iptables -I INPUT -s " + ip + " -m limit --limit " + 
-                         rate_limit + " -j ACCEPT && " +
-                         "iptables -I INPUT -s " + ip + " -j DROP";
+        // Add new rate limiting rule to nftables
+        std::string cmd = "nft insert rule inet filter input ip saddr " + ip + " limit rate " + rate_limit + " accept";
         
         int result = std::system(cmd.c_str());
+        if (result == 0) {
+            // Also add a drop rule after the rate limit
+            std::string drop_cmd = "nft insert rule inet filter input ip saddr " + ip + " drop";
+            std::system(drop_cmd.c_str());
+        }
         return result == 0;
     #endif
 }
@@ -564,12 +599,12 @@ bool FirewallAction::execute_mitigation_strategy(const std::string& ip, Mitigati
         case MitigationStrategy::PERMANENT_BLOCK:
             return execute_block_command(ip);
         case MitigationStrategy::CHALLENGE_RESPONSE:
-            // Implement challenge-response mechanism
+            // Implement challenge-response mechanism using nftables
             #ifndef TESTING
             {
-                std::string cmd = "iptables -I INPUT -s " + ip + 
-                                 " -p tcp --dport 80 -m string --string 'GET' --algo bm " +
-                                 "-j REDIRECT --to-port 8080"; // Redirect to challenge server
+                // Redirect HTTP traffic from this IP to challenge server using nftables
+                std::string cmd = "nft insert rule inet nat prerouting ip saddr " + ip + 
+                                 " tcp dport 80 redirect to :8080";
                 std::system(cmd.c_str());
             }
             #endif
