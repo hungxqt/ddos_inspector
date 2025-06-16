@@ -293,8 +293,8 @@ Add to `logs/alert_fast.txt` for testing:
 #### **🔴 Metrics Not Appearing**
 ```bash
 # Check metrics file
-ls -la /tmp/ddos_inspector/ddos_inspector_stats
-cat /tmp/ddos_inspector/ddos_inspector_stats
+ls -la /var/log/ddos_inspector/ddos_inspector_stats
+cat /var/log/ddos_inspector/ddos_inspector_stats
 
 # Verify exporter
 curl http://localhost:9091/metrics
@@ -398,7 +398,7 @@ Add to your DDoS Inspector plugin:
 ```cpp
 // Custom metric example
 void writeCustomMetric(const std::string& name, double value) {
-    std::ofstream file("/tmp/ddos_inspector/ddos_inspector_stats", std::ios::app);
+    std::ofstream file("/var/log/ddos_inspector/ddos_inspector_stats", std::ios::app);
     file << name << ":" << value << std::endl;
 }
 ```

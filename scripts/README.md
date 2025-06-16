@@ -335,7 +335,7 @@ sudo snort --show-plugins | grep ddos_inspector
 ./scripts/run_syn_flood.sh --target 127.0.0.1 --duration 30
 
 # 6. Monitor results
-watch -n 1 'cat /tmp/ddos_inspector/ddos_inspector_stats'
+watch -n 1 \'cat /var/log/ddos_inspector/ddos_inspector_stats\'
 sudo nft list set inet filter ddos_ip_set
 ```
 

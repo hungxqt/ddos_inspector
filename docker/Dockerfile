@@ -177,6 +177,7 @@ RUN mkdir -p /usr/local/lib/snort3_extra_plugins \
     && mkdir -p /usr/local/lib/daq \
     && mkdir -p /etc/snort \
     && mkdir -p /var/log/snort \
+    && mkdir -p /var/log/ddos_inspector \
     && mkdir -p /tmp \
     && mkdir -p /app/scripts \
     && mkdir -p /app/config \
@@ -206,6 +207,7 @@ RUN echo "/usr/local/snort3/lib" > /etc/ld.so.conf.d/snort3.conf \
 # Create snort user for security
 RUN useradd -r -s /bin/false -d /var/lib/snort snort \
     && chown -R snort:snort /var/log/snort \
+    && chown -R snort:snort /var/log/ddos_inspector \
     && chown snort:snort /tmp
 
 # Setup firewall capabilities and security
@@ -219,11 +221,12 @@ ENV LD_LIBRARY_PATH="/usr/local/snort3/lib:/usr/local/lib"
 # Expose ports for metrics and management
 EXPOSE 9091 9092 8080
 
-# Enhanced health check with version verification
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD snort --version 2>&1 | grep -q "Version 3.8.1.0" && \
-        [ -f /tmp/ddos_inspector/ddos_inspector_stats ] && \
-        [ -f /usr/local/lib/snort3_extra_plugins/libddos_inspector.so ] || exit 1
+# Healthcheck to ensure Snort and plugin are operational
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD snort --version && \
+        [ -f /var/log/ddos_inspector/ddos_inspector_stats ] && \
+        snort --show-plugins | grep -q ddos_inspector && \
+        [ -f /usr/local/lib/snort3_extra_plugins/ddos_inspector.so ] || exit 1
 
 # Add entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh

@@ -50,10 +50,12 @@ echo "Initializing container..."
 
 # Create necessary directories
 mkdir -p /var/log/snort
+mkdir -p /var/log/ddos_inspector
 mkdir -p /var/run
 
 # Set permissions
 chown -R snort:snort /var/log/snort
+chown -R snort:snort /var/log/ddos_inspector
 
 # Setup nftables infrastructure for DDoS protection
 echo -e "${BLUE}Setting up firewall infrastructure...${NC}"

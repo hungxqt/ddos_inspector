@@ -117,7 +117,7 @@ sed -i 's/ewma_alpha = 1.5/ewma_alpha = 0.1/' /etc/snort/snort_ddos_config.lua
 top -p $(pgrep snort)
 
 # Check packet processing rate
-cat /tmp/ddos_inspector_stats | grep packets_per_second
+cat /var/log/ddos_inspector/ddos_inspector_stats | grep packets_per_second
 
 # Profile CPU usage
 sudo perf top -p $(pgrep snort)
@@ -237,7 +237,7 @@ sudo nft list set inet filter ddos_ip_set
 grep -E "(SYN_FLOOD|HTTP_FLOOD)" /var/log/snort/alert | tail -20
 
 # Monitor entropy calculations
-grep "entropy" /tmp/ddos_inspector_stats
+grep "entropy" /var/log/ddos_inspector/ddos_inspector_stats
 
 # Analyze traffic patterns
 ./scripts/analyze_traffic_patterns.sh
@@ -287,7 +287,7 @@ sudo ./scripts/run_syn_flood.sh --target 127.0.0.1 --duration 30
 grep -E "(threshold|rate)" /etc/snort/snort_ddos_config.lua
 
 # Monitor baseline learning
-cat /tmp/ddos_inspector_stats | grep baseline
+cat /var/log/ddos_inspector/ddos_inspector_stats | grep baseline
 
 # Analyze missed attacks
 ./scripts/analyze_missed_attacks.sh /var/log/traffic.log
@@ -648,15 +648,15 @@ sudo iptables -F ddos_chain
 
 ```bash
 # Backup current state
-sudo cp /tmp/ddos_inspector_stats /tmp/ddos_inspector_stats.backup
+sudo cp /var/log/ddos_inspector/ddos_inspector_stats /var/log/ddos_inspector/ddos_inspector_stats.backup
 sudo tar -czf /tmp/snort-logs-$(date +%Y%m%d).tar.gz /var/log/snort/
 
 # Reset statistics
-sudo rm -f /tmp/ddos_inspector_stats
+sudo rm -f /var/log/ddos_inspector/ddos_inspector_stats
 sudo systemctl restart snort-ddos
 
 # Restore from backup if needed
-sudo cp /tmp/ddos_inspector_stats.backup /tmp/ddos_inspector_stats
+sudo cp /var/log/ddos_inspector/ddos_inspector_stats.backup /var/log/ddos_inspector/ddos_inspector_stats
 ```
 
 ### System Recovery
@@ -704,7 +704,7 @@ tail -1000 /var/log/snort/alert > "$DIAG_DIR/recent_alerts.log"
 journalctl -u snort-ddos --no-pager > "$DIAG_DIR/service_logs.txt"
 
 # Metrics
-cp /tmp/ddos_inspector_stats "$DIAG_DIR/" 2>/dev/null
+cp /var/log/ddos_inspector/ddos_inspector_stats "$DIAG_DIR/" 2>/dev/null
 
 # Network information
 ip addr show > "$DIAG_DIR/network_config.txt"

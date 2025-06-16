@@ -49,7 +49,7 @@ private:
     
 public:
     DDoSInspectorMetricsExporter(const std::string& bind_address = "0.0.0.0:9091", 
-                                const std::string& stats_file = "/tmp/ddos_inspector/ddos_inspector_stats")
+                                const std::string& stats_file = "/var/log/ddos_inspector/ddos_inspector_stats")
         : registry{std::make_shared<prometheus::Registry>()}
         , exposer{bind_address}
         , packets_processed_family{prometheus::BuildCounter()
@@ -110,8 +110,8 @@ public:
         , stats_file_path{stats_file}
     {
         exposer.RegisterCollectable(registry);
-        std::cout << "DDoS Inspector Metrics Exporter started on " << bind_address << std::endl;
-        std::cout << "Reading stats from: " << stats_file_path << std::endl;
+        std::cout << "DDoS Inspector Metrics Exporter started on " << bind_address << "\n";
+        std::cout << "Reading stats from: " << stats_file_path << "\n";
     }
     
     std::map<std::string, double> parseStatsFile() {
@@ -119,7 +119,7 @@ public:
         std::ifstream file(stats_file_path);
         
         if (!file.is_open()) {
-            std::cerr << "Warning: Could not open stats file: " << stats_file_path << std::endl;
+            std::cerr << "Warning: Could not open stats file: " << stats_file_path << '\n';
             return stats;
         }
         
@@ -134,7 +134,7 @@ public:
                     double value = std::stod(value_str);
                     stats[key] = value;
                 } catch (const std::exception& e) {
-                    std::cerr << "Error parsing value for key '" << key << "': " << e.what() << std::endl;
+                    std::cerr << "Error parsing value for key '" << key << "': " << e.what() << '\n';
                 }
             }
         }
@@ -184,7 +184,7 @@ public:
         std::cout << "Updated metrics - Packets processed: " << stats["packets_processed"] 
                   << ", Blocked: " << stats["packets_blocked"]
                   << ", SYN floods: " << stats["syn_floods"]
-                  << ", Entropy: " << stats["entropy"] << std::endl;
+                  << ", Entropy: " << stats["entropy"] << '\n';
     }
     
 private:
@@ -231,41 +231,56 @@ private:
         stats["blocked_ips"] = elapsed / 20.0 + (rand() % 10);
         stats["detection_time"] = 5 + (rand() % 15); // 5-20ms detection time
         
-        std::cout << "Using simulated data (stats file not available)" << std::endl;
+        std::cout << "Using simulated data (stats file not available)" << '\n';
     }
     
 public:
     void run() {
-        std::cout << "Starting DDoS Inspector metrics collection..." << std::endl;
+        std::cout << "Starting DDoS Inspector metrics collection..." << '\n';
         
         while (true) {
             try {
                 updateMetrics();
                 std::this_thread::sleep_for(std::chrono::seconds(5));
             } catch (const std::exception& e) {
-                std::cerr << "Error updating metrics: " << e.what() << std::endl;
+                std::cerr << "Error updating metrics: " << e.what() << '\n';
                 std::this_thread::sleep_for(std::chrono::seconds(5));
             }
         }
     }
 };
 
-int main() {
+// Helper function to get environment variable or default
+const char* get_env_or_default(const char* env_var, const char* default_val) {
+    const char* value = std::getenv(env_var);
+    return value ? value : default_val;
+}
+
+int main(int argc, char** argv) {
     try {
-        // Default stats file path, can be overridden by environment variable
-        const char* stats_file_env = std::getenv("DDOS_STATS_FILE");
-        std::string stats_file = stats_file_env ? stats_file_env : "/tmp/ddos_inspector/ddos_inspector_stats";
+        const char* bind_address_env = get_env_or_default("BIND_ADDRESS", "0.0.0.0:9091");
+        const char* stats_file_env = get_env_or_default("DDOS_STATS_FILE", "/var/log/ddos_inspector/ddos_inspector_stats");
+
+        std::string bind_address = bind_address_env;
+        std::string stats_file = stats_file_env;
+
+        // Allow overriding with command-line arguments
+        if (argc > 1) {
+            stats_file = argv[1];
+        }
+        if (argc > 2) {
+            bind_address = argv[2];
+        }
         
-        const char* bind_address_env = std::getenv("BIND_ADDRESS");
-        std::string bind_address = bind_address_env ? bind_address_env : "0.0.0.0:9091";
-        
+        std::cout << "Starting Prometheus Exporter on " << bind_address << "\n";
+        std::cout << "Monitoring stats file: " << stats_file << "\n";
+
         DDoSInspectorMetricsExporter exporter(bind_address, stats_file);
-        exporter.run();
-        
+        exporter.run(); // Blocking call
+
     } catch (const std::exception& e) {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
-    
     return 0;
 }

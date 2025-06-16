@@ -531,7 +531,7 @@ fi
 if [ "$DEPLOYMENT_MODE" = "full" ] || [ "$DEPLOYMENT_MODE" = "core" ]; then
     echo ""
     print_info "Monitoring Commands:"
-    echo -e "  View real-time stats: ${YELLOW}cat ./data/ddos_inspector/ddos_inspector_stats${NC}"
+    echo -e "  View real-time stats: ${YELLOW}cat /var/log/ddos_inspector/ddos_inspector_stats${NC}"
     echo -e "  Check container logs: ${YELLOW}$0 --logs${NC}"
     echo -e "  List blocked IPs: ${YELLOW}sudo $SCRIPT_DIR/nftables_rules.sh --list${NC}"
     echo -e "  Service status: ${YELLOW}$COMPOSE_CMD ps${NC}"

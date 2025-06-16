@@ -32,7 +32,7 @@ alias ddos-clean='ddos-compose clean'
 # Development helpers
 alias ddos-build='cd $DDOS_PROJECT_DIR && make -C build'
 alias ddos-test='cd $DDOS_PROJECT_DIR && ./build/unit_tests'
-alias ddos-metrics='cat $DDOS_PROJECT_DIR/data/ddos_inspector/ddos_inspector_stats'
+alias ddos-metrics='cat /var/log/ddos_inspector/ddos_inspector_stats'
 
 echo -e "${GREEN}[INFO] DDoS Inspector aliases loaded!${NC}"
 echo ""

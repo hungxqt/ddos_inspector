@@ -1,8 +1,11 @@
 #include "behavior_tracker.hpp"
 #include <vector>
+#include <cmath>
+#include <unordered_set>
 
 BehaviorTracker::BehaviorTracker() : behaviors(MAX_TRACKED_IPS) {
     last_cleanup = std::chrono::steady_clock::now();
+    patterns_timestamp = std::chrono::steady_clock::now();
 }
 
 bool BehaviorTracker::inspect(const PacketData& pkt) {
@@ -183,6 +186,36 @@ bool BehaviorTracker::inspect(const PacketData& pkt) {
         detected_patterns.emplace_back("DISTRIBUTED_ATTACK");
     }
     
+    // Advanced evasion detection (higher scores for sophisticated techniques)
+    if (detectPulseAttack(b)) {
+        detection_score += 4; // Pulse attacks indicate sophisticated evasion
+        detected_patterns.emplace_back("PULSE_ATTACK");
+    }
+    if (detectProtocolMixing(b)) {
+        detection_score += 4; // Protocol mixing shows advanced knowledge
+        detected_patterns.emplace_back("PROTOCOL_MIXING");
+    }
+    if (detectGeoDistributedAttack()) {
+        detection_score += 6; // Global coordination is highly suspicious
+        detected_patterns.emplace_back("GEO_DISTRIBUTED");
+    }
+    if (detectLowAndSlowAttack(b)) {
+        detection_score += 5; // Low-and-slow attacks are stealthy and dangerous
+        detected_patterns.emplace_back("LOW_AND_SLOW");
+    }
+    if (detectRandomizedPayloads(b)) {
+        detection_score += 3; // Randomization indicates evasion attempts
+        detected_patterns.emplace_back("RANDOMIZED_PAYLOADS");
+    }
+    if (detectLegitimateTrafficMixing(b)) {
+        detection_score += 5; // Mixing with legitimate traffic is very sophisticated
+        detected_patterns.emplace_back("LEGITIMATE_MIXING");
+    }
+    if (detectDynamicSourceRotation()) {
+        detection_score += 4; // Source rotation shows botnet-like behavior
+        detected_patterns.emplace_back("DYNAMIC_ROTATION");
+    }
+    
     // Enhanced pattern correlation - require multiple patterns for higher confidence
     if (detected_patterns.size() >= 2) {
         detection_score += 2; // Multiple attack patterns increase confidence
@@ -200,6 +233,13 @@ bool BehaviorTracker::inspect(const PacketData& pkt) {
             detection_score = static_cast<int>(detection_score / legitimacy_factor);
         }
     #endif
+    
+    // Store detected patterns for classification (replace old patterns with timestamp)
+    {
+        std::lock_guard<std::mutex> lock(patterns_mutex);
+        last_detected_patterns = detected_patterns; // This automatically replaces old patterns
+        patterns_timestamp = std::chrono::steady_clock::now(); // Mark when patterns were detected
+    }
     
     // Store final behavior state back in cache after all processing
     behaviors.put(pkt.src_ip, b);
@@ -245,14 +285,14 @@ void BehaviorTracker::cleanupOldEvents(Behavior& b) {
 bool BehaviorTracker::detectSynFlood(const Behavior& b) {
     // Real-world adaptive thresholds based on network characteristics and traffic context
     #ifdef TESTING
-        const int half_open_threshold = 100;  // Match test expectations (>100 for detection)
-        const int syn_window_seconds = 10;    // Shorter window for testing
-        const int syn_count_threshold = 50;   // Rate-based threshold for testing
+        const int half_open_threshold = 1000;  // Closer to real attacks
+        const int syn_window_seconds = 10;
+        const int syn_count_threshold = 500;   // Higher for realism
     #else
         // Production thresholds based on real-world DDoS analysis
-        const int half_open_threshold = 5000;  // Higher threshold for enterprise networks
-        const int syn_window_seconds = 60;     // Longer observation window
-        const int syn_count_threshold = 2000;  // Realistic SYN flood threshold
+        const int half_open_threshold = 5000;
+        const int syn_window_seconds = 60;
+        const int syn_count_threshold = 10000;
     #endif
     
     // Multi-factor SYN flood detection with real-world considerations
@@ -316,12 +356,12 @@ bool BehaviorTracker::detectAckFlood(const Behavior& b) {
     // Real-world ACK flood detection with improved accuracy
     #ifdef TESTING
         const int ack_window_seconds = 5;
-        const int ack_count_threshold = 10;
-        const int orphan_ack_threshold = 8;
+        const int ack_count_threshold = 100;  // Higher for realism
+        const int orphan_ack_threshold = 80;
     #else
-        const int ack_window_seconds = 30;    // Longer observation window
-        const int ack_count_threshold = 500;  // Higher threshold for production
-        const int orphan_ack_threshold = 300; // Dedicated orphan ACK threshold
+        const int ack_window_seconds = 30;
+        const int ack_count_threshold = 1000;
+        const int orphan_ack_threshold = 800;
     #endif
     
     // Enhanced ACK flood detection with pattern analysis
@@ -367,14 +407,14 @@ bool BehaviorTracker::detectHttpFlood(const Behavior& b) {
     // Real-world HTTP flood detection with legitimate traffic consideration
     #ifdef TESTING
         const int http_window_seconds = 10;
-        const int http_count_threshold = 150;   // Match test expectations (>150 for detection)
-        const int burst_threshold = 50;        // Higher burst threshold for testing  
-        const int sustained_threshold = 100;   // Higher sustained threshold for testing
+        const int http_count_threshold = 500;   // Higher for realism
+        const int burst_threshold = 200;
+        const int sustained_threshold = 400;
     #else
-        const int http_window_seconds = 120;     // 2-minute observation window
-        const int http_count_threshold = 5000;   // Much higher threshold for legitimate busy sites
-        const int burst_threshold = 1000;       // Burst detection within 30 seconds
-        const int sustained_threshold = 2000;   // Sustained attack detection
+        const int http_window_seconds = 120;
+        const int http_count_threshold = 10000;
+        const int burst_threshold = 2000;
+        const int sustained_threshold = 5000;
     #endif
     
     // Multi-timeframe HTTP flood detection with real-world considerations
@@ -561,9 +601,8 @@ bool BehaviorTracker::detectSlowloris(const Behavior& b) {
         // Slowloris has characteristic slow, regular intervals
         if (avg_interval > 10.0 && avg_interval < 30.0) { // 10-30 second intervals
             double variance = calculatePacketIntervalVariance(b.packet_intervals);
-            if (variance < 5.0) { // Low variance = regular timing
+            if (variance < 5.0) // Low variance = regular timing
                 return true;
-            }
         }
     }
     
@@ -577,7 +616,11 @@ bool BehaviorTracker::detectVolumeAttack(const Behavior& b) {
     // Standard volume-based detection: too many packets in short time
     if (duration.count() > 0 && duration.count() <= 30) {
         double packets_per_second = static_cast<double>(b.total_packets) / static_cast<double>(duration.count());
-        return packets_per_second > 1000; // Increased from 100 to 1000 packets/sec
+        #ifdef TESTING
+        return packets_per_second > 5000; // More realistic test threshold
+        #else
+        return packets_per_second > 20000;
+        #endif
     }
     
     // Enhanced evasion detection for sophisticated attackers
@@ -718,6 +761,217 @@ bool BehaviorTracker::detectDistributedAttack() {
     // If high legitimacy ratio, likely flash crowd, not attack
     if (legitimacy_ratio > 0.7 && attacking_ips > 0) {
         return false; // Likely legitimate flash crowd
+    }
+    
+    return false;
+}
+
+// ===============================================
+// Advanced DDoS/Evasion Detection Implementations
+// ===============================================
+
+bool BehaviorTracker::detectPulseAttack(const Behavior& b) {
+    // Pulse attacks: Intermittent bursts separated by quiet periods to evade detection
+    if (b.packet_intervals.size() < 20) return false; // Need sufficient data
+    
+    int burst_periods = 0;
+    int quiet_periods = 0;
+    double burst_threshold = 0.1;  // Less than 100ms = burst
+    double quiet_threshold = 3.0;  // More than 3s = quiet period
+    
+    for (double interval : b.packet_intervals) {
+        if (interval < burst_threshold) {
+            burst_periods++;
+        } else if (interval > quiet_threshold) {
+            quiet_periods++;
+        }
+    }
+    
+    // Pulse pattern: alternating bursts and quiet periods
+    double burst_ratio = static_cast<double>(burst_periods) / b.packet_intervals.size();
+    double quiet_ratio = static_cast<double>(quiet_periods) / b.packet_intervals.size();
+    
+    // Flag as pulse if we see both significant bursts and quiet periods
+    return (burst_ratio > 0.3 && quiet_ratio > 0.2 && burst_periods > 5 && quiet_periods > 3);
+}
+
+bool BehaviorTracker::detectProtocolMixing(const Behavior& b) {
+    // Protocol mixing: Combining TCP/UDP/ICMP simultaneously to confuse detection
+    int protocol_types = 0;
+    
+    // Count different protocol types seen from this IP
+    if (b.syn_count > 0) protocol_types++;       // TCP SYN
+    if (b.ack_count > 0) protocol_types++;       // TCP ACK  
+    if (b.http_requests > 0) protocol_types++;   // HTTP
+    // Note: In real implementation, would also check UDP, ICMP, etc.
+    
+    // Flag as protocol mixing if using 2+ protocols with significant traffic
+    if (protocol_types >= 2 && b.total_packets > 100) {
+        // Additional check: ensure it's not just normal mixed traffic
+        double largest_protocol_ratio = std::max({
+            static_cast<double>(b.syn_count) / b.total_packets,
+            static_cast<double>(b.ack_count) / b.total_packets, 
+            static_cast<double>(b.http_requests) / b.total_packets
+        });
+        
+        // If no single protocol dominates (>80%), likely mixing attack
+        return largest_protocol_ratio < 0.8;
+    }
+    
+    return false;
+}
+
+bool BehaviorTracker::detectGeoDistributedAttack() {
+    // Geographically distributed: Different IP ranges/countries attacking simultaneously
+    std::unordered_set<std::string> subnet_c_classes;
+    std::unordered_set<std::string> subnet_b_classes;
+    
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        if (b.total_packets > 50) { // Only count active attackers
+            // Extract /24 subnet (C-class)
+            size_t last_dot = ip.find_last_of('.');
+            if (last_dot != std::string::npos) {
+                subnet_c_classes.insert(ip.substr(0, last_dot));
+                
+                // Extract /16 subnet (B-class) 
+                size_t second_last_dot = ip.find_last_of('.', last_dot - 1);
+                if (second_last_dot != std::string::npos) {
+                    subnet_b_classes.insert(ip.substr(0, second_last_dot));
+                }
+            }
+        }
+    });
+    
+    // Flag as geo-distributed if many diverse subnets are attacking
+    return (subnet_c_classes.size() > 30 && subnet_b_classes.size() > 10);
+}
+
+bool BehaviorTracker::detectLowAndSlowAttack(const Behavior& b) {
+    // Low-and-slow attacks: Extended duration with minimal rates to stay under radar
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::minutes>(now - b.first_seen);
+    
+    // Long duration (>15 minutes) with low rate but sustained activity
+    if (duration.count() > 15) {
+        double packets_per_minute = static_cast<double>(b.total_packets) / duration.count();
+        
+        // Low rate (1-10 packets/minute) but sustained over long period
+        if (packets_per_minute >= 1.0 && packets_per_minute <= 10.0) {
+            // Additional checks for low-and-slow characteristics
+            
+            // 1. Consistent low-rate pattern
+            if (!b.packet_intervals.empty()) {
+                double avg_interval = 0.0;
+                for (double interval : b.packet_intervals) {
+                    avg_interval += interval;
+                }
+                avg_interval /= b.packet_intervals.size();
+                
+                // Intervals between 6-60 seconds indicate low-and-slow
+                if (avg_interval >= 6.0 && avg_interval <= 60.0) {
+                    return true;
+                }
+            }
+            
+            // 2. HTTP-specific low-and-slow (like Slowloris variations)
+            if (b.http_requests > 0 && b.incomplete_requests.size() > 5) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+bool BehaviorTracker::detectRandomizedPayloads(const Behavior& b) {
+    // Randomized payloads: To defeat entropy analysis and signature detection
+    if (b.packet_sizes.size() < 15) return false; // Need sufficient samples
+    
+    // Calculate statistical variance in packet sizes
+    double mean_size = 0.0;
+    for (size_t size : b.packet_sizes) {
+        mean_size += size;
+    }
+    mean_size /= b.packet_sizes.size();
+    
+    double variance = 0.0;
+    for (size_t size : b.packet_sizes) {
+        double diff = static_cast<double>(size) - mean_size;
+        variance += diff * diff;
+    }
+    variance /= b.packet_sizes.size();
+    double std_deviation = std::sqrt(variance);
+    
+    // High standard deviation indicates randomized payload sizes
+    if (std_deviation > 300.0) {
+        // Additional entropy check: ensure sizes are truly random, not just bimodal
+        std::unordered_set<size_t> unique_sizes(b.packet_sizes.begin(), b.packet_sizes.end());
+        double size_diversity = static_cast<double>(unique_sizes.size()) / b.packet_sizes.size();
+        
+        // High diversity (>70% unique sizes) suggests randomization
+        return size_diversity > 0.7;
+    }
+    
+    return false;
+}
+
+bool BehaviorTracker::detectLegitimateTrafficMixing(const Behavior& b) {
+    // Legitimate traffic mixing: Attacks hidden in normal traffic patterns
+    if (b.total_packets < 200) return false; // Need significant traffic
+    
+    // Calculate legitimacy indicators
+    double session_diversity = static_cast<double>(b.unique_session_count) / b.total_packets;
+    double established_ratio = static_cast<double>(b.established_connections.size()) / 
+                              std::max(1, static_cast<int>(b.seen_sessions.size()));
+    
+    // Mixed traffic characteristics:
+    // 1. High session diversity (many different sessions)
+    // 2.  Some established connections (legitimate handshakes)
+    // 3. But overall volume is still suspicious
+    if (session_diversity > 0.4 && established_ratio > 0.1) {
+        // Check if traffic volume is still attack-level despite legitimacy mixing
+        auto now = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - b.first_seen);
+        
+        if (duration.count() > 0) {
+            double pps = static_cast<double>(b.total_packets) / duration.count();
+            
+            // Moderate rate (50-500 pps) with high legitimacy mixing is suspicious
+            if (pps > 50 && pps < 500) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+bool BehaviorTracker::detectDynamicSourceRotation() {
+    // Dynamic source rotation: Faster IP switching to evade IP-based blocking
+    auto now = std::chrono::steady_clock::now();
+    std::unordered_set<std::string> recent_active_ips;
+    std::unordered_set<std::string> short_lived_ips;
+    
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        auto ip_duration = std::chrono::duration_cast<std::chrono::minutes>(now - b.first_seen);
+        
+        // Count IPs active in last 10 minutes
+        if (ip_duration.count() <= 10 && b.total_packets > 10) {
+            recent_active_ips.insert(ip);
+            
+            // Count IPs that were active for very short periods (rotation pattern)
+            if (ip_duration.count() <= 2 && b.total_packets > 50) {
+                short_lived_ips.insert(ip);
+            }
+        }
+    });
+    
+    // Flag as dynamic rotation if:
+    // 1. Many IPs active recently (>25)
+    // 2. High proportion of short-lived but active IPs (>40%)
+    if (recent_active_ips.size() > 25) {
+        double rotation_ratio = static_cast<double>(short_lived_ips.size()) / recent_active_ips.size();
+        return rotation_ratio > 0.4;
     }
     
     return false;
@@ -967,4 +1221,24 @@ int BehaviorTracker::calculateAdaptiveThreshold(const Behavior& b, double legiti
     }
     
     return base_threshold;
+}
+
+std::vector<std::string> BehaviorTracker::getLastDetectedPatterns() const {
+    std::lock_guard<std::mutex> lock(patterns_mutex);
+    
+    // Check if patterns are still valid (within last 10 seconds)
+    auto now = std::chrono::steady_clock::now();
+    auto pattern_age = std::chrono::duration_cast<std::chrono::seconds>(now - patterns_timestamp);
+    
+    if (pattern_age.count() > 10) {
+        // Patterns are too old, return empty to allow fallback to basic classification
+        return {};
+    }
+    
+    return last_detected_patterns;
+}
+
+void BehaviorTracker::clearLastDetectedPatterns() {
+    std::lock_guard<std::mutex> lock(patterns_mutex);
+    last_detected_patterns.clear();
 }

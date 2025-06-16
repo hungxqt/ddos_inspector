@@ -36,7 +36,7 @@ static const Parameter ddos_params[] =
     { "block_timeout", Parameter::PT_INT, "1:3600", "600",
       "IP block timeout in seconds" },
 
-    { "metrics_file", Parameter::PT_STRING, nullptr, "/tmp/ddos_inspector/ddos_inspector_stats",
+    { "metrics_file", Parameter::PT_STRING, nullptr, "/var/log/ddos_inspector/ddos_inspector_stats",
       "path to metrics output file" },
 
     { "config_profile", Parameter::PT_STRING, nullptr, "default",
@@ -483,6 +483,54 @@ AttackInfo DdosInspector::classifyAttack(const PacketData& pkt_data, bool stats_
         attack.severity = AttackInfo::SEVERITY_MEDIUM;
     }
     
+    // Check for advanced attack patterns detected by behavior tracker
+    if (behavior_anomaly && behavior_tracker) {
+        auto detected_patterns = behavior_tracker->getLastDetectedPatterns();
+        
+        // Prioritize advanced patterns (they override basic classifications)
+        for (const std::string& pattern : detected_patterns) {
+            if (pattern == "PULSE_ATTACK") {
+                attack.type = AttackInfo::PULSE_ATTACK;
+                attack.confidence = 0.9; // High confidence for sophisticated attacks
+                attack.severity = AttackInfo::SEVERITY_HIGH;
+                break;
+            } else if (pattern == "PROTOCOL_MIXING") {
+                attack.type = AttackInfo::PROTOCOL_MIXING;
+                attack.confidence = 0.8;
+                attack.severity = AttackInfo::SEVERITY_HIGH;
+                break;
+            } else if (pattern == "GEO_DISTRIBUTED") {
+                attack.type = AttackInfo::GEO_DISTRIBUTED;
+                attack.confidence = 0.95; // Very high confidence
+                attack.severity = AttackInfo::SEVERITY_CRITICAL;
+                break;
+            } else if (pattern == "LOW_AND_SLOW") {
+                attack.type = AttackInfo::LOW_AND_SLOW;
+                attack.confidence = 0.85;
+                attack.severity = AttackInfo::SEVERITY_HIGH;
+                break;
+            } else if (pattern == "RANDOMIZED_PAYLOADS") {
+                attack.type = AttackInfo::RANDOMIZED_PAYLOADS;
+                attack.confidence = 0.7;
+                attack.severity = AttackInfo::SEVERITY_MEDIUM;
+                break;
+            } else if (pattern == "LEGITIMATE_MIXING") {
+                attack.type = AttackInfo::LEGITIMATE_MIXING;
+                attack.confidence = 0.9;
+                attack.severity = AttackInfo::SEVERITY_CRITICAL;
+                break;
+            } else if (pattern == "DYNAMIC_ROTATION") {
+                attack.type = AttackInfo::DYNAMIC_ROTATION;
+                attack.confidence = 0.8;
+                attack.severity = AttackInfo::SEVERITY_HIGH;
+                break;
+            }
+        }
+        
+        // Don't clear patterns immediately - let them persist for consistent classification
+        // Patterns will be naturally updated on the next behavior analysis cycle
+    }
+    
     return attack;
 }
 
@@ -565,6 +613,13 @@ void DdosInspector::logAttackDetection(const AttackInfo& attack_info, const Pack
         case AttackInfo::DNS_AMPLIFICATION: attack_type_str = "DNS_AMPLIFICATION"; break;
         case AttackInfo::NTP_AMPLIFICATION: attack_type_str = "NTP_AMPLIFICATION"; break;
         case AttackInfo::REFLECTION_ATTACK: attack_type_str = "REFLECTION_ATTACK"; break;
+        case AttackInfo::PULSE_ATTACK: attack_type_str = "PULSE_ATTACK"; break;
+        case AttackInfo::PROTOCOL_MIXING: attack_type_str = "PROTOCOL_MIXING"; break;
+        case AttackInfo::GEO_DISTRIBUTED: attack_type_str = "GEO_DISTRIBUTED"; break;
+        case AttackInfo::LOW_AND_SLOW: attack_type_str = "LOW_AND_SLOW"; break;
+        case AttackInfo::RANDOMIZED_PAYLOADS: attack_type_str = "RANDOMIZED_PAYLOADS"; break;
+        case AttackInfo::LEGITIMATE_MIXING: attack_type_str = "LEGITIMATE_MIXING"; break;
+        case AttackInfo::DYNAMIC_ROTATION: attack_type_str = "DYNAMIC_ROTATION"; break;
         default: attack_type_str = "UNKNOWN"; break;
     }
     

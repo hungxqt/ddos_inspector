@@ -85,7 +85,7 @@ sudo snort -c /etc/snort/snort_ddos_config.lua -T
 # Expected: "Snort successfully validated the configuration"
 
 # 4. Monitor live metrics
-cat /tmp/ddos_inspector_stats
+cat /var/log/ddos_inspector/ddos_inspector_stats
 # Expected: Real-time statistics output
 ```
 
@@ -97,7 +97,7 @@ sudo ./scripts/run_syn_flood.sh --target 127.0.0.1 --port 80 --duration 10
 
 # Check for detection (wait 10-15 seconds)
 grep "SYN_FLOOD" /var/log/snort/alert
-grep "attacks_detected" /tmp/ddos_inspector_stats
+grep "attacks_detected" /var/log/ddos_inspector/ddos_inspector_stats
 
 # Success indicators:
 # - Alert logged in /var/log/snort/alert
@@ -207,7 +207,7 @@ docker exec -it ddos-inspector bash
 snort --show-plugins | grep ddos_inspector
 
 # Check metrics from host
-cat /tmp/ddos_inspector_stats
+cat /var/log/ddos_inspector/ddos_inspector_stats
 ```
 
 ### Access Monitoring Dashboards
@@ -239,7 +239,7 @@ docker exec ddos-inspector ./scripts/run_syn_flood.sh --target host.docker.inter
 docker exec ddos-inspector ./scripts/run_slowloris.sh --target host.docker.internal --duration 10
 
 # Check detection results
-docker exec ddos-inspector cat /tmp/ddos_inspector_stats
+docker exec ddos-inspector cat /var/log/ddos_inspector/ddos_inspector_stats
 ```
 
 **Next Step**: [Configure your deployment](../configuration/) or [set up advanced monitoring](../monitoring/).
@@ -579,10 +579,10 @@ sudo journalctl -u snort-ddos -f --lines=20
 #### Functionality Testing
 ```bash
 # Test metrics file creation
-timeout 30 bash -c 'while [ ! -f /tmp/ddos_inspector_stats ]; do sleep 1; done'
-if [ -f /tmp/ddos_inspector_stats ]; then
+timeout 30 bash -c 'while [ ! -f /var/log/ddos_inspector/ddos_inspector_stats ]; do sleep 1; done'
+if [ -f /var/log/ddos_inspector/ddos_inspector_stats ]; then
     echo "Metrics file created"
-    cat /tmp/ddos_inspector_stats
+    cat /var/log/ddos_inspector/ddos_inspector_stats
 else
     echo "Metrics file not created"
 fi
@@ -611,15 +611,15 @@ while true; do
     echo "Time: $(date)"
     echo ""
     
-    if [ -f /tmp/ddos_inspector_stats ]; then
+    if [ -f /var/log/ddos_inspector/ddos_inspector_stats ]; then
         echo "--- Current Statistics ---"
-        cat /tmp/ddos_inspector_stats | column -t
+        cat /var/log/ddos_inspector/ddos_inspector_stats | column -t
         echo ""
         
         # Extract key metrics
-        PACKETS=$(grep "packets_processed_total" /tmp/ddos_inspector_stats | awk '{print $2}')
-        ATTACKS=$(grep "attacks_detected_total" /tmp/ddos_inspector_stats | awk '{print $2}')
-        BLOCKED=$(grep "ips_blocked_total" /tmp/ddos_inspector_stats | awk '{print $2}')
+        PACKETS=$(grep "packets_processed_total" /var/log/ddos_inspector/ddos_inspector_stats | awk '{print $2}')
+        ATTACKS=$(grep "attacks_detected_total" /var/log/ddos_inspector/ddos_inspector_stats | awk '{print $2}')
+        BLOCKED=$(grep "ips_blocked_total" /var/log/ddos_inspector/ddos_inspector_stats | awk '{print $2}')
         
         echo "--- Key Metrics ---"
         echo "Packets Processed: ${PACKETS:-0}"
@@ -635,7 +635,7 @@ while true; do
             echo "Alert log not found"
         fi
     else
-        echo "Metrics file not found at /tmp/ddos_inspector_stats"
+        echo "Metrics file not found at /var/log/ddos_inspector/ddos_inspector_stats"
         echo "Check if DDoS Inspector is running"
     fi
     
@@ -718,7 +718,7 @@ echo "=== HTTP Flood Test Results ==="
 echo "Alerts generated: $(grep -c "HTTP_FLOOD\|SLOWLORIS" /var/log/snort/alert 2>/dev/null || echo "0")"
 
 # Check attack statistics
-grep "http_flood_detected\|slowloris_detected" /tmp/ddos_inspector_stats 2>/dev/null || echo "No HTTP flood statistics found"
+grep "http_flood_detected\|slowloris_detected" /var/log/ddos_inspector/ddos_inspector_stats 2>/dev/null || echo "No HTTP flood statistics found"
 ```
 
 ---

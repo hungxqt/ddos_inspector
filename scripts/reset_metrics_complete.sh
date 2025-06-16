@@ -60,7 +60,7 @@ reset_monitoring_pipeline() {
     
     # Step 2: Reset stats file
     echo "    Resetting stats file..."
-    local stats_file="./data/ddos_inspector/ddos_inspector_stats"
+    local stats_file="/var/log/ddos_inspector/ddos_inspector_stats"
     local reset_content="packets_processed:0
 packets_blocked:0
 entropy:0
@@ -100,7 +100,12 @@ detection_time:0"
         echo -e "${GREEN}[SUCCESS] DDoS Inspector resumed${NC}"
     fi
     
-    # Step 6: Wait for everything to stabilize
+    # Step 6: Display current (empty) stats
+    echo "    Current stats:"
+    cat "/var/log/ddos_inspector/ddos_inspector_stats" | sed 's/^/      /'
+    echo ""
+    
+    # Step 7: Wait for everything to stabilize
     echo "    Waiting for monitoring pipeline to stabilize..."
     sleep 15
 }
@@ -111,7 +116,7 @@ verify_reset() {
     
     # Check stats file
     echo -e "${CYAN}[STATS] Stats file contents:${NC}"
-    cat "./data/ddos_inspector/ddos_inspector_stats" | sed 's/^/      /'
+    cat "/var/log/ddos_inspector/ddos_inspector_stats" | sed 's/^/      /'
     
     # Check metrics exporter
     if curl -s http://localhost:9091/metrics | grep -q "ddos_inspector_syn_floods_total 0"; then

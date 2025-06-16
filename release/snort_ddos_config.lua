@@ -12,7 +12,7 @@ ddos_inspector = {
     entropy_threshold = 2.0,
     ewma_alpha = 0.1,
     block_timeout = 600,
-    metrics_file = "/tmp/ddos_inspector/ddos_inspector_stats",
+    metrics_file = "/var/log/ddos_inspector/ddos_inspector_stats",
     -- Enhanced configuration options
     config_profile = "web_server",  -- Options: default, strict, permissive, web_server, game_server
     protected_networks = "192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,2001:db8::/32",  -- Added IPv6

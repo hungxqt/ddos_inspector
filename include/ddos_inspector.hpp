@@ -38,6 +38,13 @@ struct AttackInfo {
         DNS_AMPLIFICATION,
         NTP_AMPLIFICATION,
         REFLECTION_ATTACK,
+        PULSE_ATTACK,
+        PROTOCOL_MIXING,
+        GEO_DISTRIBUTED,
+        LOW_AND_SLOW,
+        RANDOMIZED_PAYLOADS,
+        LEGITIMATE_MIXING,
+        DYNAMIC_ROTATION,
         UNKNOWN 
     };
     
@@ -87,9 +94,8 @@ public:
     double ewma_alpha = 0.1;
     uint32_t block_timeout = 600; // seconds
     uint32_t connection_threshold = 1000;
-    uint32_t rate_threshold = 50000; // packets per second
-    uint32_t max_tracked_ips = 10000;
-    std::string metrics_file = "/tmp/ddos_inspector/ddos_inspector_stats";
+    uint32_t rate_threshold = 50000;    uint32_t max_tracked_ips = 10000;
+    std::string metrics_file = "/var/log/ddos_inspector/ddos_inspector_stats";
     std::string log_level = "info";
     std::string config_profile = "default";
     std::string protected_networks = "";

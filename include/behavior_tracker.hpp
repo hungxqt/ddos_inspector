@@ -112,6 +112,10 @@ public:
     void cleanup_expired_behaviors();
     void force_cleanup_if_needed();
     
+    // Get last detected patterns for classification
+    std::vector<std::string> getLastDetectedPatterns() const;
+    void clearLastDetectedPatterns();
+    
 private:
     struct TimestampedEvent {
         std::chrono::steady_clock::time_point timestamp;
@@ -160,7 +164,12 @@ private:
     // Global tracking for distributed attacks
     int total_global_packets = 0;
     std::chrono::steady_clock::time_point last_global_reset;
-      // Helper methods
+      // Track last detected patterns for classification  
+    mutable std::vector<std::string> last_detected_patterns;
+    mutable std::chrono::steady_clock::time_point patterns_timestamp;
+    mutable std::mutex patterns_mutex;
+    
+    // Helper methods
     void cleanupOldEvents(Behavior& b);
     bool detectSynFlood(const Behavior& b);
     bool detectAckFlood(const Behavior& b);
@@ -178,6 +187,15 @@ private:
     bool detectFlashCrowdPattern(const Behavior& b);
     double calculateLegitimacyFactor(const Behavior& b);
     int calculateAdaptiveThreshold(const Behavior& b, double legitimacy_factor);
+    
+    // Advanced DDoS/Evasion Detection Functions
+    bool detectPulseAttack(const Behavior& b);
+    bool detectProtocolMixing(const Behavior& b);
+    bool detectGeoDistributedAttack();
+    bool detectLowAndSlowAttack(const Behavior& b);
+    bool detectRandomizedPayloads(const Behavior& b);
+    bool detectLegitimateTrafficMixing(const Behavior& b);
+    bool detectDynamicSourceRotation();
 };
 
 #endif // BEHAVIOR_TRACKER_H

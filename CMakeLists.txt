@@ -188,6 +188,16 @@ if(BUILD_TESTING)
         add_component_test(test_normal_traffic tests/test_normal_traffic.cpp)
     endif()
 
+    # Advanced detection tests (conditional)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_advanced_detection.cpp")
+        add_component_test(test_advanced_detection tests/test_advanced_detection.cpp)
+    endif()
+
+    # Classification tests (conditional)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_classification.cpp")
+        add_component_test(test_classification tests/test_classification.cpp)
+    endif()
+
     # Add test aliases for convenience
     add_test(NAME AllTests COMMAND unit_tests)
     add_test(NAME StatsEngineTests COMMAND test_stats_engine)

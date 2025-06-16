@@ -491,7 +491,9 @@ chmod 644 "$SNORT_CONFIG_DIR/snort_ddos_config.lua"
 
 # Create log directories
 mkdir -p /var/log/snort
+mkdir -p /var/log/ddos_inspector
 chmod 755 /var/log/snort
+chmod 755 /var/log/ddos_inspector
 
 # Create systemd service for Snort DDoS Inspector
 echo -e "${BLUE}Setting up Snort DDoS Inspector as system service...${NC}"
@@ -522,7 +524,7 @@ StandardError=journal
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/log/snort /tmp
+ReadWritePaths=/var/log/snort /var/log/ddos_inspector /tmp
 
 [Install]
 WantedBy=multi-user.target
@@ -641,7 +643,8 @@ echo -e "${YELLOW}Plugin Binary:${NC} $PLUGIN_DIR/libddos_inspector.so"
 echo -e "${YELLOW}Configuration:${NC} /etc/snort/snort_ddos_config.lua"
 echo -e "${YELLOW}Service Config:${NC} /etc/snort/service/interface.conf"
 echo -e "${YELLOW}Service File:${NC} /etc/systemd/system/snort-ddos-inspector.service"
-echo -e "${YELLOW}Log Directory:${NC} /var/log/snort/"
+echo -e "${YELLOW}Log Directory:${NC} /var/log/snort/ (Snort alerts)"
+echo -e "${YELLOW}Stats Directory:${NC} /var/log/ddos_inspector/ (DDoS Inspector metrics)"
 echo
 echo -e "${BLUE}=== Quick Start Commands ===${NC}"
 echo -e "${YELLOW}Use this script for easy management:${NC}"

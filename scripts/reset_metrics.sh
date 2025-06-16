@@ -66,7 +66,7 @@ resume_ddos_inspector() {
 
 # Function to reset DDoS Inspector stats file with permission handling
 reset_stats_file() {
-    local stats_file="./data/ddos_inspector/ddos_inspector_stats"
+    local stats_file="/var/log/ddos_inspector/ddos_inspector_stats"
     
     echo -e "${BLUE}[RESET] Resetting DDoS Inspector stats file...${NC}"
     
@@ -84,11 +84,11 @@ icmp_floods:0
 detection_time:0"
     
     # Ensure data directory exists
-    mkdir -p "./data"
+    mkdir -p "/var/log/ddos_inspector"
     
     # Method 1: Reset from inside the container (most reliable)
     echo "    Attempting to reset stats from inside the container..."
-    if docker exec ddos_inspector sh -c "echo '$reset_content' > /app/data/ddos_inspector_stats" 2>/dev/null; then
+    if docker exec ddos_inspector sh -c "echo '$reset_content' > /var/log/ddos_inspector/ddos_inspector_stats" 2>/dev/null; then
         echo -e "${GREEN}[SUCCESS] DDoS Inspector stats reset from inside container${NC}"
         
         # Also send a signal to the process to refresh stats if possible
@@ -99,20 +99,20 @@ detection_time:0"
         echo -e "${YELLOW}[WARNING] Could not reset from inside container, trying host method...${NC}"
         
         # Method 2: Reset from host (fallback)
-        # Try to write directly first
-        if echo "$reset_content" > "$stats_file" 2>/dev/null; then
-            echo -e "${GREEN}[SUCCESS] DDoS Inspector stats reset from host${NC}"
-        else
-            # If direct write fails due to permissions, use sudo
-            echo -e "${YELLOW}[WARNING] Permission denied, trying with sudo...${NC}"
-            if echo "$reset_content" | sudo tee "$stats_file" > /dev/null; then
-                # Fix ownership back to current user
-                sudo chown "$(whoami):$(whoami)" "$stats_file"
-                echo -e "${GREEN}[SUCCESS] DDoS Inspector stats reset from host (with sudo)${NC}"
+        # Attempt to write directly if permissions allow (e.g., running as root or with sudo)
+        if sudo sh -c "echo '$reset_content' > \"$stats_file\"" 2>/dev/null; then
+            echo -e "${GREEN}[SUCCESS] Stats file reset directly at $stats_file${NC}"
+        # If direct write fails, try via Docker if container is running
+        elif docker ps --format '{{.Names}}' | grep -q '^ddos_inspector$'; then
+            echo "    Attempting to reset stats file inside Docker container..."
+            if docker exec ddos_inspector sh -c "echo \'$reset_content\' > /var/log/ddos_inspector/ddos_inspector_stats" 2>/dev/null; then
+                echo -e "${GREEN}[SUCCESS] Stats file reset inside ddos_inspector container${NC}"
             else
-                echo -e "${RED}[ERROR] Failed to reset stats file even with sudo${NC}"
-                return 1
+                echo -e "${YELLOW}[WARNING] Failed to reset stats file inside container. Check permissions or if path exists.${NC}"
             fi
+        else
+            echo -e "${RED}[ERROR] Failed to reset stats file: container not running and direct write not permitted${NC}"
+            return 1
         fi
         
         # Force container restart to pick up the reset stats
@@ -131,10 +131,12 @@ detection_time:0"
     else
         echo -e "${YELLOW}[WARNING] Stats file not found on host${NC}"
     fi
-    
-    # Also check from inside container
-    echo -e "${CYAN}[STATS] Stats file content inside container:${NC}"
-    docker exec ddos_inspector cat /app/data/ddos_inspector_stats 2>/dev/null | sed 's/^/    /' || echo -e "${YELLOW}[WARNING] Could not read stats from inside container${NC}"
+    echo "    Current stats from host (if available):"
+    sudo cat "$stats_file" 2>/dev/null | sed 's/^/    /' || echo -e "${YELLOW}[WARNING] Could not read stats from host${NC}"
+    echo "    Current stats from ddos_inspector container (if running):"
+    docker exec ddos_inspector cat /var/log/ddos_inspector/ddos_inspector_stats 2>/dev/null | sed 's/^/    /' || echo -e "${YELLOW}[WARNING] Could not read stats from inside container${NC}"
+
+    echo ""
 }
 
 # Function to restart metrics exporters to force fresh data

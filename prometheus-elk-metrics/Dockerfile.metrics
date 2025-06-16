@@ -40,11 +40,11 @@ target_compile_options(ddos_metrics_exporter PRIVATE ${PROMETHEUS_CPP_CFLAGS_OTH
 RUN mkdir build && cd build && cmake .. && make
 
 # Create startup script with proper library path
-RUN echo '#!/bin/bash\n\
-export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH\n\
-echo "Starting DDoS Inspector Metrics Exporter..."\n\
-echo "Stats file: ${DDOS_STATS_FILE:-/tmp/ddos_inspector/ddos_inspector_stats}"\n\
-echo "Bind address: ${BIND_ADDRESS:-0.0.0.0:9091}"\n\
+RUN echo '#!/bin/bash\\n\\
+export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH\\n\\
+echo "Starting DDoS Inspector Metrics Exporter..."\\n\\
+echo "Stats file: ${DDOS_STATS_FILE:-/var/log/ddos_inspector/ddos_inspector_stats}"\\n\\
+echo "Bind address: ${BIND_ADDRESS:-0.0.0.0:9091}"\\n\\
 ./build/ddos_metrics_exporter' > start.sh && chmod +x start.sh
 
 EXPOSE 9091

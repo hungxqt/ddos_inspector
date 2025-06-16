@@ -199,7 +199,7 @@ curl http://localhost:9091/metrics
 docker exec ddos_inspector nft list set inet filter ddos_ip_set
 
 # View detection statistics
-docker exec ddos_inspector cat /tmp/ddos_inspector_stats
+docker exec ddos_inspector cat /var/log/ddos_inspector/ddos_inspector_stats
 ```
 
 ### **Dashboard Access**

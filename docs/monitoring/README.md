@@ -16,17 +16,17 @@ DDoS Inspector provides extensive monitoring capabilities through multiple inter
 
 ### Built-in Metrics
 
-DDoS Inspector exports metrics to `/tmp/ddos_inspector_stats` by default:
+DDoS Inspector exports metrics to `/var/log/ddos_inspector/ddos_inspector_stats` by default:
 
 ```bash
 # View current metrics
-cat /tmp/ddos_inspector_stats
+cat /var/log/ddos_inspector/ddos_inspector_stats
 
 # Monitor live updates
-watch -n 1 'cat /tmp/ddos_inspector_stats'
+watch -n 1 'cat /var/log/ddos_inspector/ddos_inspector_stats'
 
 # Parse specific metrics
-grep "packets_processed" /tmp/ddos_inspector_stats
+grep "packets_processed" /var/log/ddos_inspector/ddos_inspector_stats
 ```
 
 **Core Metrics**:
@@ -75,7 +75,7 @@ scrape_configs:
   - job_name: 'ddos-inspector-file'
     file_sd_configs:
       - files:
-        - '/tmp/ddos_inspector_stats'
+        - '/var/log/ddos_inspector/ddos_inspector_stats'
     scrape_interval: 5s
 ```
 
@@ -114,7 +114,7 @@ python3 snort_stats_exporter.py --config config.yml
 docker run -d \
   --name ddos-metrics-exporter \
   -p 9091:9091 \
-  -v /tmp/ddos_inspector_stats:/metrics/ddos_inspector_stats:ro \
+  -v /var/log/ddos_inspector/ddos_inspector_stats:/metrics/ddos_inspector_stats:ro \
   hungqt/ddos-metrics-exporter:latest
 ```
 
@@ -340,7 +340,7 @@ curl -X POST "kibana:5601/api/saved_objects/_import" \
 #!/bin/bash
 # scripts/monitor_ddos.sh
 
-METRICS_FILE="/tmp/ddos_inspector_stats"
+METRICS_FILE="/var/log/ddos_inspector/ddos_inspector_stats"
 LOG_FILE="/var/log/snort/alert"
 
 # Colors for output
@@ -503,7 +503,7 @@ from datetime import datetime
 def check_metrics():
     """Check current metrics and trigger alerts if needed"""
     try:
-        with open('/tmp/ddos_inspector_stats', 'r') as f:
+        with open('/var/log/ddos_inspector/ddos_inspector_stats', 'r') as f:
             metrics = {}
             for line in f:
                 parts = line.strip().split()
@@ -585,7 +585,7 @@ Establish performance baselines:
 # scripts/establish_baseline.sh
 
 BASELINE_FILE="/etc/ddos-inspector/baseline.json"
-METRICS_FILE="/tmp/ddos_inspector_stats"
+METRICS_FILE="/var/log/ddos_inspector/ddos_inspector_stats"
 
 echo "Establishing performance baseline..."
 
@@ -637,7 +637,7 @@ echo "Baseline established: $BASELINE_FILE"
 
 ```bash
 # Check if metrics file is being updated
-stat /tmp/ddos_inspector_stats
+stat /var/log/ddos_inspector/ddos_inspector_stats
 
 # Verify metrics export process
 ps aux | grep -E "(prometheus|snort_stats_exporter)"
@@ -657,7 +657,7 @@ export DDOS_DEBUG_METRICS=1
 sudo systemctl restart snort-ddos
 
 # Monitor metrics file updates
-tail -f /tmp/ddos_inspector_stats
+tail -f /var/log/ddos_inspector/ddos_inspector_stats
 
 # Check for metrics parsing errors
 journalctl -u snort-ddos | grep -i error

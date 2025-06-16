@@ -480,8 +480,8 @@ sudo tee /usr/local/bin/check_ddos_inspector.sh << 'EOF'
 # Check if DDoS Inspector is running and responsive
 if systemctl is-active --quiet snort-ddos; then
     # Check if metrics file is being updated (within last 30 seconds)
-    if [ -f /tmp/ddos_inspector_stats ]; then
-        LAST_UPDATE=$(stat -c %Y /tmp/ddos_inspector_stats)
+    if [ -f /var/log/ddos_inspector/ddos_inspector_stats ]; then
+        LAST_UPDATE=$(stat -c %Y /var/log/ddos_inspector/ddos_inspector_stats)
         CURRENT_TIME=$(date +%s)
         if [ $((CURRENT_TIME - LAST_UPDATE)) -lt 30 ]; then
             exit 0  # Healthy
@@ -966,7 +966,7 @@ sudo tee /usr/local/bin/ddos_performance_monitor.sh << 'EOF'
 # DDoS Performance Monitor
 
 LOG_FILE="/var/log/ddos_performance.log"
-METRICS_FILE="/tmp/ddos_inspector_stats"
+METRICS_FILE="/var/log/ddos_inspector/ddos_inspector_stats"
 
 while true; do
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
@@ -1028,7 +1028,7 @@ sudo tee /usr/local/bin/ddos_autoscale.sh << 'EOF'
 #!/bin/bash
 # DDoS Inspector Auto-scaling
 
-METRICS_FILE="/tmp/ddos_inspector_stats"
+METRICS_FILE="/var/log/ddos_inspector/ddos_inspector_stats"
 CONFIG_FILE="/etc/snort/snort_ddos_config.lua"
 
 # Get current metrics
