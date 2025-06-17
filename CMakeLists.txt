@@ -1,6 +1,35 @@
 cmake_minimum_required(VERSION 3.16)
 project(ddos_inspector VERSION 1.0.0 LANGUAGES CXX)
 
+# Function to read environment variables from .env file
+function(load_env_file)
+    set(ENV_FILE "${CMAKE_CURRENT_SOURCE_DIR}/.env")
+    if(EXISTS "${ENV_FILE}")
+        message(STATUS "Loading configuration from ${ENV_FILE}")
+        file(STRINGS "${ENV_FILE}" ENV_CONTENTS)
+        foreach(line ${ENV_CONTENTS})
+            # Skip comments and empty lines
+            if(NOT line MATCHES "^#" AND NOT line STREQUAL "")
+                # Parse key=value pairs
+                if(line MATCHES "^([^=]+)=(.*)$")
+                    set(key "${CMAKE_MATCH_1}")
+                    set(value "${CMAKE_MATCH_2}")
+                    # Remove quotes if present
+                    string(REGEX REPLACE "^[\"']|[\"']$" "" value "${value}")
+                    # Set as environment variable for this CMake run
+                    set(ENV{${key}} "${value}")
+                    message(STATUS "  Set ${key}=${value}")
+                endif()
+            endif()
+        endforeach()
+    else()
+        message(STATUS "No .env file found at ${ENV_FILE}, using system defaults")
+    endif()
+endfunction()
+
+# Load environment variables from .env file
+load_env_file()
+
 # Use GNUInstallDirs for standard installation paths
 include(GNUInstallDirs)
 
@@ -26,29 +55,73 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native -flto")
 find_package(Threads REQUIRED)
 find_package(PkgConfig QUIET)
 
+# Find libcap for capability management in firewall_action
+if(PkgConfig_FOUND)
+    pkg_check_modules(CAP REQUIRED libcap)
+    if(CAP_FOUND)
+        message(STATUS "Found libcap: ${CAP_LIBRARIES}")
+    endif()
+else()
+    # Fallback for systems without pkg-config
+    find_library(CAP_LIBRARIES cap)
+    if(CAP_LIBRARIES)
+        set(CAP_FOUND TRUE)
+        message(STATUS "Found libcap: ${CAP_LIBRARIES}")
+    else()
+        message(FATAL_ERROR "libcap is required but not found")
+    endif()
+endif()
+
 # Function to find Snort 3 installation
 function(find_snort3)
-    # Configure Snort 3 paths - support both environment variable and default
-    if(DEFINED ENV{SNORT3_INCLUDE_DIR})
+    # First try to use SNORT_INCLUDE_DIR from .env file
+    if(DEFINED ENV{SNORT_INCLUDE_DIR} AND EXISTS $ENV{SNORT_INCLUDE_DIR})
+        set(SNORT3_INCLUDE_DIR $ENV{SNORT_INCLUDE_DIR} PARENT_SCOPE)
+        set(SNORT3_INCLUDE_DIR_LOCAL $ENV{SNORT_INCLUDE_DIR})
+        message(STATUS "Using Snort include directory from .env: ${SNORT3_INCLUDE_DIR_LOCAL}")
+    # Fallback to SNORT3_INCLUDE_DIR environment variable (legacy)
+    elseif(DEFINED ENV{SNORT3_INCLUDE_DIR} AND EXISTS $ENV{SNORT3_INCLUDE_DIR})
         set(SNORT3_INCLUDE_DIR $ENV{SNORT3_INCLUDE_DIR} PARENT_SCOPE)
         set(SNORT3_INCLUDE_DIR_LOCAL $ENV{SNORT3_INCLUDE_DIR})
+        message(STATUS "Using Snort include directory from SNORT3_INCLUDE_DIR: ${SNORT3_INCLUDE_DIR_LOCAL}")
+    # Search common locations
     else()
-        set(SNORT3_INCLUDE_DIR "/usr/local/snort3/include/snort" PARENT_SCOPE)
-        set(SNORT3_INCLUDE_DIR_LOCAL "/usr/local/snort3/include/snort")
+        set(SNORT_SEARCH_PATHS
+            "/usr/local/snort3/include/snort"
+            "/usr/local/include/snort"
+            "/usr/include/snort"
+            "/opt/snort3/include/snort"
+            "/usr/include/snort3"
+            "/usr/local/include/snort3"
+        )
+        
+        set(SNORT3_INCLUDE_DIR_LOCAL "")
+        foreach(path ${SNORT_SEARCH_PATHS})
+            if(EXISTS "${path}")
+                set(SNORT3_INCLUDE_DIR_LOCAL "${path}")
+                set(SNORT3_INCLUDE_DIR "${path}" PARENT_SCOPE)
+                message(STATUS "Found Snort headers at: ${path}")
+                break()
+            endif()
+        endforeach()
+        
+        if(NOT SNORT3_INCLUDE_DIR_LOCAL)
+            message(FATAL_ERROR "Snort 3 headers not found. Searched paths: ${SNORT_SEARCH_PATHS}. Please set SNORT_INCLUDE_DIR in .env file or install Snort 3 development headers.")
+        endif()
     endif()
     
     # Verify Snort 3 installation
     if(EXISTS ${SNORT3_INCLUDE_DIR_LOCAL})
-        message(STATUS "Found Snort 3 headers at: ${SNORT3_INCLUDE_DIR_LOCAL}")
+        message(STATUS "Using Snort 3 headers at: ${SNORT3_INCLUDE_DIR_LOCAL}")
         
         # Check for specific Snort 3.8.1.0 headers to ensure compatibility
         if(EXISTS "${SNORT3_INCLUDE_DIR_LOCAL}/framework/snort_api.h")
             message(STATUS "Snort 3 API headers found - build should be compatible")
         else()
-            message(WARNING "Snort 3 API headers missing - build may fail")
+            message(WARNING "Snort 3 API headers missing at ${SNORT3_INCLUDE_DIR_LOCAL}/framework/snort_api.h - build may fail")
         endif()
     else()
-        message(FATAL_ERROR "Snort 3 headers not found at ${SNORT3_INCLUDE_DIR_LOCAL}. Please install Snort 3.8.1.0 or set SNORT3_INCLUDE_DIR environment variable")
+        message(FATAL_ERROR "Snort 3 headers not found at ${SNORT3_INCLUDE_DIR_LOCAL}. Please install Snort 3.8.1.0 or set SNORT_INCLUDE_DIR in .env file")
     endif()
 endfunction()
 
@@ -74,7 +147,6 @@ target_include_directories(ddos_core
 target_compile_definitions(ddos_core
     PRIVATE
         _GLIBCXX_USE_CXX11_ABI=1
-        $<$<BOOL:${BUILD_TESTING}>:TESTING>
 )
 
 target_compile_options(ddos_core
@@ -90,6 +162,7 @@ target_compile_options(ddos_core
 target_link_libraries(ddos_core 
     PUBLIC 
         Threads::Threads
+        ${CAP_LIBRARIES}
 )
 
 # Main Snort 3 plugin
@@ -131,13 +204,45 @@ set_target_properties(ddos_inspector PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
+# Function to get plugin installation path
+function(get_plugin_install_path)
+    # Use SNORT_PLUGIN_PATH from .env file if available
+    if(DEFINED ENV{SNORT_PLUGIN_PATH})
+        set(PLUGIN_INSTALL_PATH $ENV{SNORT_PLUGIN_PATH} PARENT_SCOPE)
+        message(STATUS "Using plugin install path from .env: $ENV{SNORT_PLUGIN_PATH}")
+    else()
+        # Default fallback
+        set(PLUGIN_INSTALL_PATH "/usr/local/lib/snort3_extra_plugins" PARENT_SCOPE)
+        message(STATUS "Using default plugin install path: /usr/local/lib/snort3_extra_plugins")
+    endif()
+endfunction()
+
+# Get plugin installation path
+get_plugin_install_path()
+
 # Install plugin to Snort directory
 install(TARGETS ddos_inspector 
-    LIBRARY DESTINATION /usr/local/lib/snort3_extra_plugins)
+    LIBRARY DESTINATION ${PLUGIN_INSTALL_PATH})
+
+# Function to get config installation path
+function(get_config_install_path)
+    # Use SNORT_CONFIG_PATH from .env file if available
+    if(DEFINED ENV{SNORT_CONFIG_PATH})
+        set(CONFIG_INSTALL_PATH $ENV{SNORT_CONFIG_PATH} PARENT_SCOPE)
+        message(STATUS "Using config install path from .env: $ENV{SNORT_CONFIG_PATH}")
+    else()
+        # Default fallback
+        set(CONFIG_INSTALL_PATH "/etc/snort" PARENT_SCOPE)
+        message(STATUS "Using default config install path: /etc/snort")
+    endif()
+endfunction()
+
+# Get config installation path
+get_config_install_path()
 
 # Install configuration files
 install(FILES snort_ddos_config.lua 
-    DESTINATION /etc/snort/)
+    DESTINATION ${CONFIG_INSTALL_PATH})
 
 # Testing framework setup
 if(BUILD_TESTING)

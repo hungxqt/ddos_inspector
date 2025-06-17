@@ -164,6 +164,7 @@ uninstall_dependencies() {
         check \
         libc6-dev \
         liblzma-dev \
+        libcap-dev \
         libcurl4-openssl-dev \
         libjson-c-dev \
         libconfig-dev \
@@ -283,6 +284,7 @@ apt-get install -y \
     make \
     libc6-dev \
     liblzma-dev \
+    libcap-dev \
     wget \
     apt-transport-https \
     ca-certificates \

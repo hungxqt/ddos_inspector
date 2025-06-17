@@ -28,8 +28,59 @@ SHOW_HELP=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Load environment variables from .env file if it exists
+ENV_FILE="$PROJECT_ROOT/.env"
+if [ -f "$ENV_FILE" ]; then
+    echo -e "${GREEN}Loading configuration from $ENV_FILE${NC}"
+    # Source the .env file, ignoring comments and empty lines
+    while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        if [[ ! "$key" =~ ^#.* ]] && [[ -n "$key" ]]; then
+            # Remove any quotes from the value
+            value=$(echo "$value" | sed 's/^["'"'"']\|["'"'"']$//g')
+            export "$key"="$value"
+        fi
+    done < <(grep -v '^#' "$ENV_FILE" | grep -v '^$')
+    echo -e "${GREEN}Environment variables loaded from .env file${NC}"
+else
+    echo -e "${YELLOW}No .env file found at $ENV_FILE, using defaults${NC}"
+fi
+
+# Set defaults if not provided in .env
+NETWORK_INTERFACE=${NETWORK_INTERFACE:-"eth0"}
+SNORT_BINARY_PATH=${SNORT_BINARY_PATH:-""}
+SNORT_CONFIG_PATH=${SNORT_CONFIG_PATH:-"/usr/local/snort3/etc/snort"}
+SNORT_DEFAULTS_FILE=${SNORT_DEFAULTS_FILE:-"/usr/local/snort3/etc/snort/snort_defaults.lua"}
+SNORT_INCLUDE_DIR=${SNORT_INCLUDE_DIR:-""}
+SNORT_PLUGIN_PATH=${SNORT_PLUGIN_PATH:-"/usr/local/lib/snort3_extra_plugins"}
+LOG_DIR_SNORT=${LOG_DIR_SNORT:-"/var/log/snort"}
+LOG_DIR_DDOS=${LOG_DIR_DDOS:-"/var/log/ddos_inspector"}
+
+# Function to display current configuration from .env
+show_config() {
+    echo -e "${GREEN}=== Current DDoS Inspector Configuration ===${NC}"
+    echo -e "${BLUE}Network Interface:${NC} $NETWORK_INTERFACE"
+    echo -e "${BLUE}Snort Binary:${NC} $SNORT_BINARY"
+    echo -e "${BLUE}Snort Plugin Path:${NC} $SNORT_PLUGIN_PATH"
+    echo -e "${BLUE}Snort Include Dir:${NC} $SNORT_INCLUDE_DIR"
+    echo -e "${BLUE}Snort Defaults File:${NC} $SNORT_DEFAULTS_FILE"
+    echo -e "${BLUE}Log Directory (Snort):${NC} $LOG_DIR_SNORT"
+    echo -e "${BLUE}Log Directory (DDoS):${NC} $LOG_DIR_DDOS"
+    echo -e "${BLUE}Environment File:${NC} $ENV_FILE"
+    echo
+    echo -e "${YELLOW}To customize these settings, edit: $ENV_FILE${NC}"
+    echo
+}
+
 # Function to find Snort binary
 find_snort_binary() {
+    # First check if SNORT_BINARY_PATH is set in .env and exists
+    if [ -n "$SNORT_BINARY_PATH" ] && [ -x "$SNORT_BINARY_PATH" ]; then
+        echo "$SNORT_BINARY_PATH"
+        return 0
+    fi
+    
+    # Fallback to searching common locations
     local snort_paths=(
         "/usr/local/snort3/bin/snort"
         "/usr/local/bin/snort"
@@ -72,6 +123,7 @@ show_help() {
     echo
     echo -e "${BLUE}OPTIONS:${NC}"
     echo -e "  ${YELLOW}-h, --help${NC}              Show this help message"
+    echo -e "  ${YELLOW}--show-config${NC}           Show current configuration from .env"
     echo -e "  ${YELLOW}-i, --interface IFACE${NC}   Set network interface (default: eth0)"
     echo -e "  ${YELLOW}--start${NC}                 Start the DDoS Inspector service"
     echo -e "  ${YELLOW}--stop${NC}                  Stop the DDoS Inspector service"
@@ -102,11 +154,17 @@ create_directories() {
     echo -e "${BLUE}[SETUP] Creating required directories...${NC}"
     
     # Create log directories with proper permissions
-    sudo mkdir -p /var/log/snort
-    sudo mkdir -p /var/log/ddos_inspector
-    sudo chmod 755 /var/log/snort
-    sudo chmod 755 /var/log/ddos_inspector
-    echo -e "${GREEN}[SUCCESS] Created log directories${NC}"
+    sudo mkdir -p "$LOG_DIR_SNORT"
+    sudo mkdir -p "$LOG_DIR_DDOS"
+    sudo chmod 755 "$LOG_DIR_SNORT"
+    sudo chmod 755 "$LOG_DIR_DDOS"
+    echo -e "${GREEN}[SUCCESS] Created log directories: $LOG_DIR_SNORT, $LOG_DIR_DDOS${NC}"
+    
+    # Create plugin directory if it doesn't exist
+    if [ ! -d "$SNORT_PLUGIN_PATH" ]; then
+        echo -e "${BLUE}Creating plugin directory: $SNORT_PLUGIN_PATH${NC}"
+        sudo mkdir -p "$SNORT_PLUGIN_PATH"
+    fi
 }
 
 # Function to start snort with DDoS configuration
@@ -125,7 +183,7 @@ start_snort_ddos() {
     
     # Start snort in background with the specified command using the interface argument
     echo "    Starting Snort on interface ${NETWORK_INTERFACE}..."
-    nohup sudo snort -c /etc/snort/snort_ddos_config.lua --plugin-path /usr/local/lib/snort3_extra_plugins -v -i ${NETWORK_INTERFACE} -A alert_fast > /var/log/snort/snort.log 2>&1 &
+    nohup sudo "$SNORT_BINARY" -c /etc/snort/snort_ddos_config.lua --plugin-path "$SNORT_PLUGIN_PATH" -v -i "${NETWORK_INTERFACE}" -A alert_fast > "$LOG_DIR_SNORT/snort.log" 2>&1 &
     
     # Give it more time to start
     sleep 5
@@ -133,15 +191,15 @@ start_snort_ddos() {
     # Verify snort started successfully using a more robust check
     if pgrep snort > /dev/null; then
         echo -e "${GREEN}[SUCCESS] Snort started successfully on interface ${NETWORK_INTERFACE}${NC}"
-        echo -e "${BLUE}[INFO] Snort logs available at: /var/log/snort/snort.log${NC}"
-        echo -e "${BLUE}[INFO] To monitor: tail -f /var/log/snort/snort.log${NC}"
+        echo -e "${BLUE}[INFO] Snort logs available at: $LOG_DIR_SNORT/snort.log${NC}"
+        echo -e "${BLUE}[INFO] To monitor: tail -f $LOG_DIR_SNORT/snort.log${NC}"
         echo -e "${BLUE}[INFO] Running processes:${NC}"
         ps aux | grep snort | grep -v grep | head -3
     else
         echo -e "${RED}[ERROR] Failed to start Snort${NC}"
-        echo -e "${YELLOW}[DEBUG] Check the log file: /var/log/snort/snort.log${NC}"
+        echo -e "${YELLOW}[DEBUG] Check the log file: $LOG_DIR_SNORT/snort.log${NC}"
         echo -e "${YELLOW}[DEBUG] Last few lines of log:${NC}"
-        tail -10 /var/log/snort/snort.log
+        tail -10 "$LOG_DIR_SNORT/snort.log" 2>/dev/null || echo "Log file not found"
     fi
 }
 
@@ -151,6 +209,10 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             SHOW_HELP=true
             shift
+            ;;
+        --show-config)
+            show_config
+            exit 0
             ;;
         -i|--interface)
             if [[ -n "$2" && "$2" != -* ]]; then
@@ -261,7 +323,7 @@ handle_service_action() {
             ;;
         test-config)
             echo -e "${BLUE}Testing configuration syntax...${NC}"
-            if "$SNORT_BINARY" --plugin-path /usr/local/lib/snort3_extra_plugins -c /etc/snort/snort_ddos_config.lua -T 2>/dev/null; then
+            if "$SNORT_BINARY" --plugin-path "$SNORT_PLUGIN_PATH" -c /etc/snort/snort_ddos_config.lua -T 2>/dev/null; then
                 echo -e "${GREEN}[SUCCESS] Configuration syntax is valid${NC}"
             else
                 echo -e "${RED}[ERROR] Configuration syntax test failed${NC}"
@@ -272,17 +334,17 @@ handle_service_action() {
         show-plugins)
             echo -e "${BLUE}Showing loaded Snort plugins (without configuration):${NC}"
             # Use plugin-path to load plugins without DAQ initialization
-            if "$SNORT_BINARY" --plugin-path /usr/local/lib/snort3_extra_plugins --show-plugins 2>/dev/null | grep -A 2 -B 2 ddos_inspector; then
+            if "$SNORT_BINARY" --plugin-path "$SNORT_PLUGIN_PATH" --show-plugins 2>/dev/null | grep -A 2 -B 2 ddos_inspector; then
                 echo -e "${GREEN}[SUCCESS] DDoS Inspector plugin found and loaded successfully${NC}"
             else
                 echo -e "${YELLOW}DDoS Inspector plugin not found in loaded plugins${NC}"
                 echo -e "${BLUE}All available plugins with plugin path:${NC}"
-                "$SNORT_BINARY" --plugin-path /usr/local/lib/snort3_extra_plugins --show-plugins 2>/dev/null | head -20
+                "$SNORT_BINARY" --plugin-path "$SNORT_PLUGIN_PATH" --show-plugins 2>/dev/null | head -20
             fi
             echo ""
             echo -e "${BLUE}Testing plugin loading with configuration file:${NC}"
             # Test with configuration but without interface to avoid DAQ initialization
-            if timeout 5 "$SNORT_BINARY" --plugin-path /usr/local/lib/snort3_extra_plugins -c /etc/snort/snort_ddos_config.lua --show-plugins 2>/dev/null | grep -q ddos_inspector; then
+            if timeout 5 "$SNORT_BINARY" --plugin-path "$SNORT_PLUGIN_PATH" -c /etc/snort/snort_ddos_config.lua --show-plugins 2>/dev/null | grep -q ddos_inspector; then
                 echo -e "${GREEN}[SUCCESS] DDoS Inspector plugin loads successfully with configuration${NC}"
             else
                 echo -e "${YELLOW}[WARNING] Plugin loading with configuration timed out or failed${NC}"
@@ -384,11 +446,60 @@ echo -e "${BLUE}Network Interface: ${NETWORK_INTERFACE}${NC}"
 # Create required directories
 create_directories
 
+# Function to verify critical dependencies
+verify_dependencies() {
+    echo -e "${BLUE}Verifying critical dependencies...${NC}"
+    
+    local missing_deps=()
+    
+    # Check for libcap
+    if ! pkg-config --exists libcap; then
+        missing_deps+=("libcap-dev")
+    fi
+    
+    # Check for libpcap
+    if ! pkg-config --exists libpcap; then
+        missing_deps+=("libpcap-dev")
+    fi
+    
+    # Check for openssl
+    if ! pkg-config --exists openssl; then
+        missing_deps+=("libssl-dev")
+    fi
+    
+    # Check for basic build tools
+    if ! command -v cmake >/dev/null 2>&1; then
+        missing_deps+=("cmake")
+    fi
+    
+    if ! command -v g++ >/dev/null 2>&1; then
+        missing_deps+=("g++")
+    fi
+    
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        echo -e "${RED}[ERROR] Missing critical dependencies:${NC}"
+        for dep in "${missing_deps[@]}"; do
+            echo -e "${RED}  - $dep${NC}"
+        done
+        echo -e "${YELLOW}[INFO] Please run: apt-get install ${missing_deps[*]}${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}[SUCCESS] All critical dependencies are available${NC}"
+    return 0
+}
+
 # Install dependencies using the dedicated script
 echo -e "${BLUE}Installing system dependencies...${NC}"
 if [ -f "$SCRIPT_DIR/install_dependencies.sh" ]; then
-    if "$SCRIPT_DIR/install_dependencies.sh"; then
+    if "$SCRIPT_DIR/install_dependencies.sh" ; then
         echo -e "${GREEN}[SUCCESS] Dependencies installed successfully${NC}"
+        
+        # Verify dependencies are actually available
+        if ! verify_dependencies; then
+            echo -e "${RED}[ERROR] Critical dependencies are missing after installation${NC}"
+            exit 1
+        fi
     else
         echo -e "${RED}[ERROR] Dependency installation failed${NC}"
         exit 1
@@ -399,23 +510,30 @@ else
 fi
 
 # Define Snort include directories to search
-SNORT_INCLUDE_DIRS=(
-    "/usr/include/snort"
-    "/usr/local/include/snort"
-    "/opt/snort3/include/snort"
-    "/usr/include/snort3"
-    "/usr/local/include/snort3"
-)
+# First check if SNORT_INCLUDE_DIR is set in .env and valid
+if [ -n "$SNORT_INCLUDE_DIR" ] && [ -d "$SNORT_INCLUDE_DIR" ]; then
+    echo -e "${GREEN}Using Snort headers from .env config: $SNORT_INCLUDE_DIR${NC}"
+    SNORT_HEADERS_FOUND=true
+else
+    echo -e "${BLUE}SNORT_INCLUDE_DIR not set or invalid, searching common locations...${NC}"
+    SNORT_INCLUDE_DIRS=(
+        "/usr/include/snort"
+        "/usr/local/include/snort"
+        "/opt/snort3/include/snort"
+        "/usr/include/snort3"
+        "/usr/local/include/snort3"
+    )
 
-SNORT_HEADERS_FOUND=false
-for dir in "${SNORT_INCLUDE_DIRS[@]}"; do
-    if [ -d "$dir" ]; then
-        SNORT_HEADERS_FOUND=true
-        SNORT_INCLUDE_DIR="$dir"
-        echo -e "${GREEN}Found Snort headers at: ${dir}${NC}"
-        break
-    fi
-done
+    SNORT_HEADERS_FOUND=false
+    for dir in "${SNORT_INCLUDE_DIRS[@]}"; do
+        if [ -d "$dir" ]; then
+            SNORT_HEADERS_FOUND=true
+            SNORT_INCLUDE_DIR="$dir"
+            echo -e "${GREEN}Found Snort headers at: ${dir}${NC}"
+            break
+        fi
+    done
+fi
 
 if [ "$SNORT_HEADERS_FOUND" = false ]; then
     echo -e "${RED}Error: Snort 3 development headers not found${NC}"
@@ -426,18 +544,14 @@ fi
 
 echo -e "${GREEN}Prerequisites check passed!${NC}"
 
-# Determine plugin installation directory
-PLUGIN_DIRS=(
-    "/usr/local/lib/snort3_extra_plugins"
-    "/usr/lib/snort3_extra_plugins"
-    "/opt/snort3/lib/snort3_extra_plugins"
-)
+# Use plugin directory from .env or default
+PLUGIN_DIR="$SNORT_PLUGIN_PATH"
+echo -e "${BLUE}Using plugin directory: $PLUGIN_DIR${NC}"
 
-# Create plugin directory
-PLUGIN_DIR="/usr/local/lib/snort3_extra_plugins"
+# Create plugin directory if it doesn't exist
 if [ ! -d "$PLUGIN_DIR" ]; then
     echo -e "${BLUE}Creating plugin directory: $PLUGIN_DIR${NC}"
-    mkdir -p "$PLUGIN_DIR"
+    sudo mkdir -p "$PLUGIN_DIR"
 fi
 
 # Build the plugin
@@ -482,17 +596,49 @@ echo -e "${BLUE}Installing configuration files...${NC}"
 
 # Create Snort configuration directory if it doesn't exist
 SNORT_CONFIG_DIR="/etc/snort"
-mkdir -p "$SNORT_CONFIG_DIR"
+sudo mkdir -p "$SNORT_CONFIG_DIR"
 
-# Copy configuration file
-cp ../snort_ddos_config.lua "$SNORT_CONFIG_DIR/"
-chmod 644 "$SNORT_CONFIG_DIR/snort_ddos_config.lua"
+# Process configuration template with environment variables
+CONFIG_TEMPLATE="$PROJECT_ROOT/snort_ddos_config.lua.template"
+CONFIG_TARGET="$SNORT_CONFIG_DIR/snort_ddos_config.lua"
+
+if [ -f "$CONFIG_TEMPLATE" ]; then
+    echo -e "${BLUE}Processing configuration template...${NC}"
+    # Create temporary config file with substitutions
+    sudo cp "$CONFIG_TEMPLATE" "$CONFIG_TARGET"
+    
+    # Replace template variables with actual values
+    sudo sed -i "s|{{SNORT_PLUGIN_PATH}}|$SNORT_PLUGIN_PATH|g" "$CONFIG_TARGET"
+    sudo sed -i "s|{{SNORT_DEFAULTS_FILE}}|$SNORT_DEFAULTS_FILE|g" "$CONFIG_TARGET"
+    sudo sed -i "s|{{LOG_DIR_DDOS}}|$LOG_DIR_DDOS|g" "$CONFIG_TARGET"
+    
+    echo -e "${GREEN}[SUCCESS] Configuration file created from template${NC}"
+else
+    echo -e "${YELLOW}[WARNING] Template not found, copying original config...${NC}"
+    # Fallback to original config file
+    sudo cp ../snort_ddos_config.lua "$SNORT_CONFIG_DIR/"
+fi
+
+sudo chmod 644 "$CONFIG_TARGET"
+
+# Verify the defaults file exists
+if [ ! -f "$SNORT_DEFAULTS_FILE" ]; then
+    echo -e "${RED}[ERROR] Snort defaults file not found: $SNORT_DEFAULTS_FILE${NC}"
+    echo -e "${YELLOW}[INFO] Please update SNORT_DEFAULTS_FILE in $ENV_FILE${NC}"
+    echo -e "${YELLOW}[INFO] Common locations:${NC}"
+    echo -e "  /usr/local/snort3/etc/snort/snort_defaults.lua"
+    echo -e "  /etc/snort/snort_defaults.lua"
+    echo -e "  /opt/snort3/etc/snort/snort_defaults.lua"
+    exit 1
+else
+    echo -e "${GREEN}[SUCCESS] Snort defaults file found: $SNORT_DEFAULTS_FILE${NC}"
+fi
 
 # Create log directories
-mkdir -p /var/log/snort
-mkdir -p /var/log/ddos_inspector
-chmod 755 /var/log/snort
-chmod 755 /var/log/ddos_inspector
+sudo mkdir -p "$LOG_DIR_SNORT"
+sudo mkdir -p "$LOG_DIR_DDOS"
+sudo chmod 755 "$LOG_DIR_SNORT"
+sudo chmod 755 "$LOG_DIR_DDOS"
 
 # Create systemd service for Snort DDoS Inspector
 echo -e "${BLUE}Setting up Snort DDoS Inspector as system service...${NC}"
@@ -510,7 +656,7 @@ Type=simple
 User=root
 Group=root
 ExecStartPre=/usr/bin/test -f /etc/snort/snort_ddos_config.lua
-ExecStart=$SNORT_BINARY --plugin-path /usr/local/lib/snort3_extra_plugins -c /etc/snort/snort_ddos_config.lua -i ${NETWORK_INTERFACE} -A alert_fast -D
+ExecStart=$SNORT_BINARY --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -i ${NETWORK_INTERFACE} -A alert_fast -D
 ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=mixed
 Restart=on-failure
@@ -523,7 +669,7 @@ StandardError=journal
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/log/snort /var/log/ddos_inspector /tmp
+ReadWritePaths=$LOG_DIR_SNORT $LOG_DIR_DDOS /tmp
 
 [Install]
 WantedBy=multi-user.target
@@ -552,7 +698,7 @@ systemctl daemon-reload
 # Setup nftables rules
 echo -e "${BLUE}Setting up nftables firewall rules...${NC}"
 if [ -f "$SCRIPT_DIR/nftables_rules.sh" ]; then
-    if "$SCRIPT_DIR/nftables_rules.sh"; then
+    if "$SCRIPT_DIR/nftables_rules.sh" ; then
         echo -e "${GREEN}[SUCCESS] nftables rules applied successfully${NC}"
     else
         echo -e "${RED}[ERROR] nftables rules setup failed${NC}"
@@ -584,9 +730,9 @@ fi
 
 # Test plugin loading
 echo -e "${BLUE}Testing plugin loading...${NC}"
-if "$SNORT_BINARY" --plugin-path /usr/local/lib/snort3_extra_plugins --show-plugins 2>/dev/null | grep -q "ddos_inspector"; then
+if "$SNORT_BINARY" --plugin-path "$SNORT_PLUGIN_PATH" --show-plugins 2>/dev/null | grep -q "ddos_inspector"; then
     echo -e "${GREEN}[SUCCESS] Plugin loads successfully in Snort${NC}"
-elif LD_LIBRARY_PATH="$PLUGIN_DIR" "$SNORT_BINARY" --plugin-path /usr/local/lib/snort3_extra_plugins --show-plugins 2>/dev/null | grep -q "ddos_inspector"; then
+elif LD_LIBRARY_PATH="$PLUGIN_DIR" "$SNORT_BINARY" --plugin-path "$SNORT_PLUGIN_PATH" --show-plugins 2>/dev/null | grep -q "ddos_inspector"; then
     echo -e "${GREEN}[SUCCESS] Plugin loads successfully (with library path)${NC}"
     echo -e "${YELLOW}Note: You may need to set LD_LIBRARY_PATH=$PLUGIN_DIR${NC}"
 else
@@ -596,7 +742,7 @@ fi
 
 # Test configuration syntax
 echo -e "${BLUE}Testing configuration syntax...${NC}"
-if "$SNORT_BINARY" --plugin-path /usr/local/lib/snort3_extra_plugins -c "$SNORT_CONFIG_DIR/snort_ddos_config.lua" -T 2>/dev/null; then
+if "$SNORT_BINARY" --plugin-path "$SNORT_PLUGIN_PATH" -c "$SNORT_CONFIG_DIR/snort_ddos_config.lua" -T 2>/dev/null; then
     echo -e "${GREEN}[SUCCESS] Configuration syntax is valid${NC}"
 else
     echo -e "${YELLOW}[WARNING] Configuration syntax test failed - may need manual adjustment${NC}"
@@ -626,24 +772,25 @@ echo -e "   sudo systemctl reload snort-ddos-inspector   # Reload config"
 echo
 echo -e "${BLUE}=== Manual Testing (Alternative) ===${NC}"
 echo -e "${YELLOW}1. Verify plugin installation:${NC}"
-echo -e "   sudo $SNORT_BINARY --plugin-path /usr/local/lib/snort3_extra_plugins --show-plugins | grep ddos_inspector"
+echo -e "   sudo $SNORT_BINARY --plugin-path $SNORT_PLUGIN_PATH --show-plugins | grep ddos_inspector"
 echo
 echo -e "${YELLOW}2. Test configuration syntax:${NC}"
-echo -e "   sudo $SNORT_BINARY --plugin-path /usr/local/lib/snort3_extra_plugins -c /etc/snort/snort_ddos_config.lua -T"
+echo -e "   sudo $SNORT_BINARY --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -T"
 echo
 echo -e "${YELLOW}3. Run DDoS Inspector manually (for testing):${NC}"
-echo -e "   sudo $SNORT_BINARY --plugin-path /usr/local/lib/snort3_extra_plugins -c /etc/snort/snort_ddos_config.lua -i $NETWORK_INTERFACE -A alert_fast"
+echo -e "   sudo $SNORT_BINARY --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -i $NETWORK_INTERFACE -A alert_fast"
 echo
 echo -e "${YELLOW}4. Monitor alerts:${NC}"
-echo -e "   tail -f /var/log/snort/alert"
+echo -e "   tail -f $LOG_DIR_SNORT/alert"
 echo
 echo -e "${BLUE}=== Configuration Files ===${NC}"
 echo -e "${YELLOW}Plugin Binary:${NC} $PLUGIN_DIR/libddos_inspector.so"
 echo -e "${YELLOW}Configuration:${NC} /etc/snort/snort_ddos_config.lua"
 echo -e "${YELLOW}Service Config:${NC} /etc/snort/service/interface.conf"
 echo -e "${YELLOW}Service File:${NC} /etc/systemd/system/snort-ddos-inspector.service"
-echo -e "${YELLOW}Log Directory:${NC} /var/log/snort/ (Snort alerts)"
-echo -e "${YELLOW}Stats Directory:${NC} /var/log/ddos_inspector/ (DDoS Inspector metrics)"
+echo -e "${YELLOW}Log Directory:${NC} $LOG_DIR_SNORT/ (Snort alerts)"
+echo -e "${YELLOW}Stats Directory:${NC} $LOG_DIR_DDOS/ (DDoS Inspector metrics)"
+echo -e "${YELLOW}Environment Config:${NC} $ENV_FILE"
 echo
 echo -e "${BLUE}=== Quick Start Commands ===${NC}"
 echo -e "${YELLOW}Use this script for easy management:${NC}"
@@ -666,3 +813,6 @@ echo -e "3. Start the service: $0 --start"
 echo -e "4. Monitor with: $0 --logs"
 echo
 echo -e "${GREEN}DDoS Inspector deployment completed successfully!${NC}"
+echo
+echo -e "${BLUE}=== Current Configuration ===${NC}"
+show_config

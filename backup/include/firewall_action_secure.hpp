@@ -13,9 +13,8 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <regex>
+#include <sys/stat.h>
 
 // Enhanced threat levels for adaptive response
 enum class ThreatLevel : std::uint8_t {
@@ -49,8 +48,6 @@ enum class JobType : std::uint8_t {
     UNBLOCK_IP,
     RATE_LIMIT_IP,
     UNRATE_LIMIT_IP,
-    BATCH_BLOCK_IPS,     // ADDED: Batch operation for better performance
-    BATCH_UNBLOCK_IPS,   // ADDED: Batch operation for better performance
     LOG_MESSAGE
 };
 
@@ -58,7 +55,6 @@ enum class JobType : std::uint8_t {
 struct FirewallJob {
     JobType type;
     std::string ip;
-    std::vector<std::string> ip_batch;  // ADDED: For batch operations
     std::string message;
     int severity;
     std::string level;
@@ -68,8 +64,6 @@ struct FirewallJob {
         : type(t), ip(addr), severity(0), error_code(0) {}
     FirewallJob(JobType t, const std::string& addr, int sev) 
         : type(t), ip(addr), severity(sev), error_code(0) {}
-    FirewallJob(JobType t, const std::vector<std::string>& addrs)  // ADDED: Batch constructor
-        : type(t), ip_batch(addrs), severity(0), error_code(0) {}
     FirewallJob(JobType t, const std::string& lvl, const std::string& msg, int err = 0)
         : type(t), message(msg), level(lvl), error_code(err) {}
 };
@@ -107,20 +101,7 @@ public:
     size_t get_rate_limited_count() const;
     std::vector<std::string> get_rate_limited_ips() const;
     std::vector<std::string> get_blocked_ips() const;
-    std::vector<std::string> get_current_firewall_rules() const;  // ADDED: Get current nftables rules
     ThreatLevel get_current_threat_level() const;
-    
-    // ADDED: Metrics API for monitoring
-    struct Metrics {
-        size_t blocked_ips;
-        size_t rate_limited_ips;
-        size_t dropped_jobs;
-        size_t dropped_logs;
-        size_t exec_errors;
-        size_t whitelist_size;
-        size_t reputation_entries;
-    };
-    Metrics get_metrics() const;
     
     // Maintenance
     void cleanup_expired_blocks();
@@ -161,7 +142,7 @@ private:
     mutable std::mutex legitimate_patterns_mutex;
     std::unordered_map<std::string, double> legitimate_patterns;
     
-    // Static thread infrastructure for worker and logger queues (declarations only)
+    // Static thread infrastructure for worker and logger queues
     static std::mutex worker_mutex;
     static std::condition_variable worker_cv;
     static std::queue<FirewallJob> job_queue;
@@ -175,11 +156,9 @@ private:
     static std::thread logger_thread;
     static std::atomic<bool> logger_running;
     
-    // Thread-safe console output mutex
-    static std::mutex console_mutex;
-    
-    // Compile-time validation pattern to prevent shell injection  
-    // Note: IPv4/IPv6 validation done via inet_pton only (no regex needed)
+    // Compile-time validation patterns to prevent shell injection
+    static const std::regex ipv4_regex;
+    static const std::regex ipv6_regex;
     static const std::regex shell_metachar_regex;
     
     // Configuration
@@ -199,13 +178,9 @@ private:
     void process_firewall_job(const FirewallJob& job);
     
     // Security and validation
-    void create_log_directory();
     void drop_privileges();
     static bool validate_ip_address(const std::string& ip);
     IPFamily get_ip_family(const std::string& ip);
-    
-    // Safe child process handling
-    bool safe_waitpid(pid_t pid, int* status, const std::string& operation);
     
     // Safe command execution methods
     bool execute_block_command_safe(const std::string& ip, IPFamily family);
@@ -213,31 +188,11 @@ private:
     bool execute_rate_limit_command_safe(const std::string& ip, int severity, IPFamily family);
     bool execute_unrate_limit_command_safe(const std::string& ip, IPFamily family);
     
-    // ADDED: Batch command execution for performance
-    bool execute_batch_block_command_safe(const std::vector<std::string>& ips);
-    bool execute_batch_unblock_command_safe(const std::vector<std::string>& ips);
-    
-    // ADDED: Batching state variables
-    std::vector<std::string> pending_blocks_v4;
-    std::vector<std::string> pending_blocks_v6;
-    std::vector<std::string> pending_unblocks_v4;
-    std::vector<std::string> pending_unblocks_v6;
-    std::chrono::steady_clock::time_point last_batch_time;
-    static constexpr size_t BATCH_SIZE = 50;  // Max IPs per batch
-    static constexpr std::chrono::milliseconds BATCH_TIMEOUT{100};  // Max time to wait for batch
-    mutable std::mutex batch_mutex;
-    
-    // Log rotation settings (constants defined in .cpp to avoid duplication)
-    mutable std::mutex log_rotation_mutex;
-    
     // Async logging
-    bool enqueue_job(const FirewallJob& job);  // Returns false if job was dropped
+    void enqueue_job(const FirewallJob& job);
     void log_firewall_action_async(const std::string& level, const std::string& message, int error_code = 0);
     void write_log_message_safe(const std::string& level, const std::string& message, int error_code);
     void log_firewall_action(const std::string& level, const std::string& message, int error_code = 0);
-    
-    // Log rotation
-    void rotate_log_if_needed();
     
     // Helper methods
     bool is_cidr_match(const std::string& ip, const std::string& cidr) const;

@@ -277,3 +277,37 @@ TEST_F(FirewallActionDetailedTest, MixedTimeoutBehavior) {
     EXPECT_TRUE(firewall->is_blocked(test_ip3));  // Should still be blocked
     EXPECT_EQ(firewall->get_blocked_count(), 2);
 }
+
+TEST_F(FirewallActionDetailedTest, ShowCurrentFirewallRules) {
+    // Add some test blocks and rate limits
+    firewall->block("192.168.170.1");
+    firewall->rate_limit("192.168.170.2", 2);
+    
+    // Wait a moment for async operations
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // Get current firewall rules
+    auto rules = firewall->get_current_firewall_rules();
+    
+    std::cout << "\n=== CURRENT FIREWALL RULES ===\n";
+    for (const auto& rule : rules) {
+        std::cout << rule << '\n';
+    }
+    std::cout << "================================\n";
+    
+    // Get blocked and rate-limited IPs
+    auto blocked = firewall->get_blocked_ips();
+    auto rate_limited = firewall->get_rate_limited_ips();
+    
+    std::cout << "=== TRACKED IPs ===\n";
+    std::cout << "Blocked IPs (" << blocked.size() << "):\n";
+    for (const auto& ip : blocked) {
+        std::cout << "  " << ip << '\n';
+    }
+    
+    std::cout << "Rate Limited IPs (" << rate_limited.size() << "):\n";
+    for (const auto& ip : rate_limited) {
+        std::cout << "  " << ip << '\n';
+    }
+    std::cout << "==================\n";
+}

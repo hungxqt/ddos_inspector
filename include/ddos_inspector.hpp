@@ -11,6 +11,7 @@
 #include <protocols/tcp.h>
 #include <protocols/udp.h>
 #include <main/snort_config.h>
+#include <array>
 #include <atomic>
 #include <memory>
 #include <string>
@@ -18,6 +19,7 @@
 #include <cstdint>
 #include <thread>
 #include <mutex>
+#include <unordered_map>
 #include "packet_data.hpp"
 
 // Forward declarations
@@ -25,9 +27,49 @@ class StatsEngine;
 class BehaviorTracker;
 class FirewallAction;
 
+// Centralized threshold tuning configuration
+struct ThresholdTuning {
+    double adaptation_factor = 0.1;           // EWMA adaptation rate
+    double entropy_multiplier = 0.3;          // Entropy threshold multiplier
+    double rate_multiplier = 3.0;             // Rate threshold multiplier
+    double min_entropy_threshold = 0.5;       // Minimum entropy threshold
+    double min_rate_threshold = 1000.0;       // Minimum rate threshold
+    double confidence_base_stats = 0.4;       // Base confidence from stats anomaly
+    double confidence_base_behavior = 0.4;    // Base confidence from behavior anomaly
+    double confidence_syn_bonus = 0.1;        // SYN flood detection bonus
+    double confidence_http_short_bonus = 0.15; // Short HTTP request bonus
+    double confidence_rate_high_bonus = 0.2;  // High rate ratio bonus
+    double confidence_rate_med_bonus = 0.1;   // Medium rate ratio bonus
+    double confidence_entropy_high_bonus = 0.2; // High entropy ratio bonus
+    double confidence_entropy_med_bonus = 0.1;  // Medium entropy ratio bonus
+    double rate_ratio_high_threshold = 10.0;  // High rate ratio threshold
+    double rate_ratio_med_threshold = 5.0;    // Medium rate ratio threshold
+    double entropy_ratio_high_threshold = 5.0; // High entropy ratio threshold
+    double entropy_ratio_med_threshold = 3.0;  // Medium entropy ratio threshold
+    
+    void logConfiguration() const;
+};
+
+// Global tuning parameters instance
+extern ThresholdTuning g_threshold_tuning;
+
+// Hash specialization for IPv6 address arrays
+namespace std {
+    template<>
+    struct hash<std::array<uint8_t, 16>> {
+        size_t operator()(const std::array<uint8_t, 16>& arr) const {
+            size_t h = 0;
+            for (size_t i = 0; i < 16; ++i) {
+                h ^= std::hash<uint8_t>{}(arr[i]) + 0x9e3779b9 + (h << 6) + (h >> 2);
+            }
+            return h;
+        }
+    };
+}
+
 // Attack classification structures enhanced for Snort 3.8.1.0
 struct AttackInfo {
-    enum Type : std::uint8_t { 
+    enum class Type : std::uint8_t { 
         SYN_FLOOD, 
         HTTP_FLOOD, 
         SLOWLORIS, 
@@ -48,7 +90,7 @@ struct AttackInfo {
         UNKNOWN 
     };
     
-    enum Severity : std::uint8_t { 
+    enum class Severity : std::uint8_t { 
         SEVERITY_LOW = 1, 
         SEVERITY_MEDIUM = 2, 
         SEVERITY_HIGH = 3, 
@@ -81,6 +123,9 @@ public:
 
     // Configuration profile management
     void applyConfigurationProfile();
+    
+    // Path validation for security
+    bool validateMetricsPath(const std::string& path) const;
 
     // Enhanced configuration parameters for Snort 3.8.1.0
     bool allow_icmp = false;
@@ -96,9 +141,14 @@ public:
     uint32_t connection_threshold = 1000;
     uint32_t rate_threshold = 50000;    uint32_t max_tracked_ips = 10000;
     std::string metrics_file = "/var/log/ddos_inspector/ddos_inspector_stats";
+    std::string blocked_ips_file = "/var/log/ddos_inspector/blocked_ips.txt";
+    std::string rate_limited_ips_file = "/var/log/ddos_inspector/rate_limited_ips.txt";
     std::string log_level = "info";
     std::string config_profile = "default";
     std::string protected_networks = "";
+    double adaptation_factor = 0.1;
+    double entropy_multiplier = 0.3;
+    double rate_multiplier = 3.0;
 };
 
 class DdosInspector : public snort::Inspector
@@ -130,6 +180,8 @@ private:
     uint32_t connection_threshold;
     uint32_t rate_threshold;
     std::string metrics_file_path;
+    std::string blocked_ips_file_path;
+    std::string rate_limited_ips_file_path;
     std::string log_level;
     std::string config_profile;
     
@@ -143,43 +195,70 @@ private:
     std::atomic<uint64_t> packets_blocked{0};
     std::atomic<uint64_t> packets_rate_limited{0};
     std::atomic<uint64_t> syn_flood_detections{0};
+    std::atomic<uint64_t> http_flood_detections{0};
     std::atomic<uint64_t> slowloris_detections{0};
     std::atomic<uint64_t> udp_flood_detections{0};
     std::atomic<uint64_t> icmp_flood_detections{0};
     std::atomic<uint64_t> amplification_detections{0};
     std::atomic<uint64_t> false_positives{0};
     
+    // Block rate calculation for metrics
+    std::atomic<uint64_t> total_blocks_issued{0};
+    std::chrono::steady_clock::time_point block_rate_start_time;
+    
+    // Current blocked IP count tracking
+    std::atomic<uint32_t> current_blocked_count{0};
+    
+    // LRU cache for rate-limited IPs to preserve long-term offenders
+    mutable std::mutex rate_limited_cache_mutex;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> rate_limited_cache;
+    std::list<std::string> rate_limited_lru_list;
+    std::unordered_map<std::string, std::list<std::string>::iterator> rate_limited_lru_map;
+    static constexpr size_t MAX_RATE_LIMITED_ENTRIES = 5000;
+    
     // Performance metrics
     std::chrono::steady_clock::time_point last_metrics_update;
+    std::chrono::steady_clock::time_point last_ip_list_update;
     std::chrono::steady_clock::time_point detection_start_time;
     std::atomic<uint64_t> total_processing_time_us{0};
     std::atomic<uint64_t> max_processing_time_us{0};
     
-    // Background metrics thread
+    // Address string cache for performance
+    mutable std::mutex address_cache_mutex;
+    std::unordered_map<uint32_t, std::string> ipv4_cache;
+    std::unordered_map<std::array<uint8_t, 16>, std::string> ipv6_cache; // Binary to string mapping
+    
+    // Background metrics thread with proper memory ordering
     std::atomic<bool> metrics_running{false};
     std::thread metrics_thread;
-    std::mutex metrics_mutex;
+    mutable std::mutex metrics_mutex;
+    mutable std::mutex file_operations_mutex; // Protects all file operations
     
-    // Fragment flood detection
-    std::atomic<uint32_t> fragment_count{0};
+    // Metrics file management
+    std::unique_ptr<std::ofstream> persistent_metrics_file;
     
     // Enhanced detection methods
     AttackInfo classifyAttack(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly, uint8_t proto);
     bool detectAmplificationAttack(const PacketData& pkt_data, uint8_t proto);
-    bool detectFragmentFlood(snort::Packet* p);
+    bool detectFragmentFlood(const std::string& src_ip);
     void incrementAttackCounter(AttackInfo::Type type);
+    
+    // I/O optimization methods
     void writeMetrics();
+    void writeMetricsToFile(const std::string& temp_path); // Write to temp file first
     void writeMetricsBackground(); // Background metrics writing
     void startMetricsThread();
     void stopMetricsThread();
     void updatePerformanceMetrics(std::chrono::microseconds processing_time);
     
-    // Fragment tracking
-    struct FragmentStats {
-        uint32_t count = 0;
-        std::chrono::steady_clock::time_point last_seen;
-    };
-    std::unordered_map<std::string, FragmentStats> fragment_stats;
+    // Address caching for performance
+    std::string getIPv4String(uint32_t addr);
+    std::string getIPv6String(const snort::ip::snort_in6_addr* addr);
+    
+    // Protocol parsing helpers for optimized eval function
+    std::pair<std::string, std::string> extractAddresses(snort::Packet* p);
+    PacketData extractPacketData(snort::Packet* p, const std::string& src_ip, const std::string& dst_ip, uint32_t packet_size = 0);
+    bool checkForFragmentation(snort::Packet* p, const std::string& src_ip);
     
     // Dynamic mitigation methods
     int calculateBlockDuration(AttackInfo::Severity severity, AttackInfo::Type type);
@@ -190,9 +269,21 @@ private:
     void writeBlockedIpsFile(const std::vector<std::string>& blocked_ips);
     void writeRateLimitedIpsFile(const std::vector<std::string>& rate_limited_ips);
     
+    // Block rate calculation
+    double calculateBlockRate() const;
+    void incrementBlockCounter() { total_blocks_issued.fetch_add(1, std::memory_order_relaxed); }
+    
+    // LRU rate-limited IP management
+    void addToRateLimitedCache(const std::string& ip);
+    std::vector<std::string> getRateLimitedIpsFromCache();
+    void cleanupExpiredRateLimitedIPs();
+    
+    // False positive tracking
+    void incrementFalsePositiveCounter() { false_positives.fetch_add(1, std::memory_order_relaxed); }
+    
     // Adaptive threshold management
     void updateAdaptiveThresholds();
-    double calculateConfidenceScore(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly);
+    uint8_t calculateConfidenceScore(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly); // Returns confidence in hundredths (0-100)
 };
 
 #endif // DDOS_INSPECTOR_HPP
