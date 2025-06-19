@@ -931,10 +931,9 @@ show_deployment_summary() {
     echo -e "${YELLOW}3. Run DDoS Inspector manually (for testing):${NC}"
     echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -i $NETWORK_INTERFACE -A alert_fast"
     echo
-        echo -e "${YELLOW}4. Monitor alerts:${NC}"
-        echo -e "   tail -f $LOG_DIR_SNORT/alert"
-        echo
-    fi
+    echo -e "${YELLOW}4. Monitor alerts:${NC}"
+    echo -e "   tail -f $LOG_DIR_SNORT/alert"
+    echo
     
     echo -e "${BLUE}=== Configuration Files ===${NC}"
     echo -e "${YELLOW}Plugin Binary:${NC} $SNORT_PLUGIN_PATH/libddos_inspector.so"
