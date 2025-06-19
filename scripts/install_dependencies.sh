@@ -172,7 +172,9 @@ uninstall_dependencies() {
         libsqlite3-dev \
         uuid-dev \
         libffi-dev \
-        libreadline-dev 2>/dev/null || true
+        libreadline-dev \
+        libgoogle-perftools-dev \
+        libtcmalloc-minimal4 2>/dev/null || true
     
     print_info "Removing network tools..."
     
@@ -231,10 +233,6 @@ uninstall_dependencies() {
     
     # Remove log rotation
     rm -f /etc/logrotate.d/ddos-inspector
-    
-    # Remove systemd service files
-    rm -f /etc/systemd/system/ddos-inspector.service
-    systemctl daemon-reload
     
     # Remove Docker repository and keys
     rm -f /etc/apt/sources.list.d/docker.list
@@ -305,7 +303,9 @@ apt-get install -y \
     software-properties-common \
     jq \
     net-tools \
-    iproute2
+    iproute2 \
+    libgoogle-perftools-dev \
+    libtcmalloc-minimal4
 
 # Check and upgrade CMake if older than 3.16.0
 print_info "Checking CMake version..."
@@ -409,7 +409,7 @@ cd build
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=/usr/local/snort3 \
     -DENABLE_STATIC_DAQ=ON \
-    -DENABLE_TCMALLOC=ON \
+    -DENABLE_TCMALLOC=OFF \
     -DENABLE_JEMALLOC=OFF \
     -DENABLE_LARGE_PCAP=ON \
     -DENABLE_SHELL=ON \
@@ -546,31 +546,6 @@ cat > /etc/logrotate.d/ddos-inspector << 'EOF'
 }
 EOF
 
-# Setup systemd service file (template)
-print_info "Creating systemd service template..."
-cat > /etc/systemd/system/ddos-inspector.service << 'EOF'
-[Unit]
-Description=DDoS Inspector Protection Service
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Type=forking
-User=root
-WorkingDirectory=/opt/ddos-inspector
-ExecStart=/opt/ddos-inspector/scripts/deploy_host.sh --service
-ExecStop=/usr/bin/docker-compose down
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Set proper permissions
-chmod 644 /etc/systemd/system/ddos-inspector.service
-systemctl daemon-reload
-
 # Update library cache
 print_info "Updating library cache..."
 ldconfig
@@ -589,14 +564,10 @@ echo -e "${GREEN}    [INSTALLED] nftables firewall${NC}"
 echo -e "${GREEN}    [INSTALLED] Network testing tools${NC}"
 echo -e "${GREEN}    [INSTALLED] System user (ddos-inspector)${NC}"
 echo -e "${GREEN}    [INSTALLED] Log rotation setup${NC}"
-echo -e "${GREEN}    [INSTALLED] Systemd service template${NC}"
 echo ""
 print_info "Next Steps:"
 echo "   1. Logout and login again (for Docker group membership)"
 echo "   2. Run: ./scripts/deploy_host.sh"
-echo ""
-print_info "Optional: Enable auto-start with:"
-echo "   sudo systemctl enable ddos-inspector"
 echo ""
 
 # Verify installations
