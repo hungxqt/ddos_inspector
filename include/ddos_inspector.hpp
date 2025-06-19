@@ -19,7 +19,10 @@
 #include <cstdint>
 #include <thread>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
+#include <algorithm>
+#include <stdexcept>
 #include "packet_data.hpp"
 
 // Forward declarations
@@ -64,6 +67,20 @@ struct ThresholdTuning {
     double adaptive_window_minutes = 10.0;         // Window for adaptive updates
     bool enable_time_of_day_adaptation = true;     // Enable time-based adaptation
     bool enable_network_load_adaptation = true;    // Enable load-based adaptation
+    
+    // RUNTIME testing mode support
+    bool runtime_testing_mode = false;         // Runtime testing mode flag
+    
+    // TESTING mode thresholds (much lower for easier testing)
+    #ifdef TESTING
+    void applyTestingThresholds();
+    #endif
+    
+    // NEW: Runtime testing mode methods
+    void applyRuntimeTestingThresholds();
+    void restoreProductionThresholds();
+    void setRuntimeTestingMode(bool enabled);
+    bool isRuntimeTestingMode() const { return runtime_testing_mode; }
     
     void logConfiguration() const;
 };
@@ -145,6 +162,11 @@ public:
     // Path validation for security
     bool validateMetricsPath(const std::string& path) const;
 
+    // NEW: Runtime testing mode management
+    void setRuntimeTestingMode(bool enabled);
+    bool isRuntimeTestingMode() const;
+    void reloadTestingConfiguration();
+
     // Enhanced configuration parameters for Snort 3.8.1.0
     bool allow_icmp = false;
     bool enable_amplification_detection = true;
@@ -157,7 +179,8 @@ public:
     double ewma_alpha = 0.1;
     uint32_t block_timeout = 600; // seconds
     uint32_t connection_threshold = 1000;
-    uint32_t rate_threshold = 50000;    uint32_t max_tracked_ips = 10000;
+    uint32_t rate_threshold = 50000;
+    uint32_t max_tracked_ips = 10000;
     bool use_env_files = true;  // NEW: Enable/disable environment variable support
     std::string metrics_file;
     std::string blocked_ips_file;
@@ -175,6 +198,9 @@ public:
     double http_flood_baseline_multiplier = 10.0;
     bool enable_time_of_day_adaptation = true;
     bool enable_network_load_adaptation = true;
+    
+    // NEW: Runtime testing mode flag
+    bool runtime_testing_mode = false;
 };
 
 class DdosInspector : public snort::Inspector
@@ -188,6 +214,11 @@ public:
     
     // Enhanced interface for Snort 3.8.1.0
     bool configure(snort::SnortConfig*) override { return true; }
+
+    // NEW: Runtime testing mode management
+    void setRuntimeTestingMode(bool enabled);
+    bool isRuntimeTestingMode() const;
+    void reloadAdaptiveThresholds();
 
 private:
     // Enhanced adaptive threshold management
@@ -282,7 +313,6 @@ private:
     
     // I/O optimization methods
     void writeMetrics();
-    void writeMetricsToFile(const std::string& temp_path); // Write to temp file first
     void writeMetricsBackground(); // Background metrics writing
     void startMetricsThread();
     void stopMetricsThread();
@@ -302,10 +332,6 @@ private:
     void logAttackDetection(const AttackInfo& attack_info, const PacketData& pkt_data, 
                            bool stats_anomaly, bool behavior_anomaly);
     
-    // IP list file management
-    void writeBlockedIpsFile(const std::vector<std::string>& blocked_ips);
-    void writeRateLimitedIpsFile(const std::vector<std::string>& rate_limited_ips);
-    
     // Block rate calculation
     double calculateBlockRate() const;
     void incrementBlockCounter() { total_blocks_issued.fetch_add(1, std::memory_order_relaxed); }
@@ -322,5 +348,132 @@ private:
     void updateAdaptiveThresholds();
     uint8_t calculateConfidenceScore(const PacketData& pkt_data, bool stats_anomaly, bool behavior_anomaly); // Returns confidence in hundredths (0-100)
 };
+
+// NEW: Deadlock prevention - establish global lock ordering
+namespace DeadlockPrevention {
+    // Global lock ordering hierarchy (acquire in this order, release in reverse)
+    enum class LockLevel : std::uint16_t {
+        DETECTOR_REGISTRY = 1000,    // detector_interface.hpp registry_mutex_
+        BEHAVIOR_PATTERNS = 2000,    // behavior_tracker.hpp patterns_mutex
+        BEHAVIOR_CLEANUP = 2100,     // behavior_tracker.hpp cleanup_mutex  
+        BEHAVIOR_BASELINE = 2200,    // behavior_tracker.hpp baseline_mutex
+        STATS_ENGINE = 3000,         // stats_engine.hpp stats_mutex
+        FIREWALL_SHARED = 4000,      // firewall_action.hpp shared_mutex locks
+        FIREWALL_EXCLUSIVE = 4100,   // firewall_action.hpp exclusive locks
+        INSPECTOR_METRICS = 5000,    // ddos_inspector.hpp metrics_mutex
+        INSPECTOR_FILES = 5100,      // ddos_inspector.hpp file_operations_mutex
+        INSPECTOR_CACHE = 5200,      // ddos_inspector.hpp address_cache_mutex
+        INSPECTOR_RATE_CACHE = 5300  // ddos_inspector.hpp rate_limited_cache_mutex
+    };
+    
+    // Deadlock detection helper
+    extern thread_local std::vector<LockLevel> acquired_locks;
+    
+    inline bool can_acquire_lock(LockLevel level) {
+        for (auto acquired : acquired_locks) {
+            if (static_cast<int>(level) <= static_cast<int>(acquired)) {
+                return false; // Would violate lock ordering
+            }
+        }
+        return true;
+    }
+    
+    inline void record_lock_acquisition(LockLevel level) {
+        acquired_locks.push_back(level);
+    }
+    
+    inline void record_lock_release(LockLevel level) {
+        acquired_locks.erase(
+            std::remove(acquired_locks.begin(), acquired_locks.end(), level),
+            acquired_locks.end()
+        );
+    }
+}
+
+// NEW: Timeout-based lock guard for deadlock prevention
+template<typename Mutex>
+class TimeoutLockGuard {
+private:
+    Mutex& mutex_;
+    bool locked_;
+    
+public:
+    explicit TimeoutLockGuard(Mutex& m, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000))
+        : mutex_(m), locked_(false) {
+        
+        // Use timed_mutex for timeout support
+        if constexpr (std::is_same_v<Mutex, std::timed_mutex>) {
+            locked_ = mutex_.try_lock_for(timeout);
+        } else if constexpr (std::is_same_v<Mutex, std::shared_timed_mutex>) {
+            locked_ = mutex_.try_lock_for(timeout);
+        } else {
+            // Fallback to regular lock for std::mutex and other types
+            mutex_.lock();
+            locked_ = true;
+        }
+        
+        if (!locked_) {
+            // Use Snort's LogMessage to avoid dependency
+            snort::LogMessage("DDoS Inspector: Lock acquisition timeout - potential deadlock avoided\n");
+            throw std::runtime_error("Lock timeout - deadlock prevention");
+        }
+    }
+    
+    ~TimeoutLockGuard() {
+        if (locked_) {
+            mutex_.unlock();
+        }
+    }
+    
+    TimeoutLockGuard(const TimeoutLockGuard&) = delete;
+    TimeoutLockGuard& operator=(const TimeoutLockGuard&) = delete;
+    
+    bool owns_lock() const { return locked_; }
+};
+
+// NEW: Lock-free atomic counter for high-frequency operations
+class AtomicMetrics {
+private:
+    alignas(64) std::atomic<uint64_t> packets_processed_{0};
+    alignas(64) std::atomic<uint64_t> packets_blocked_{0};
+    alignas(64) std::atomic<uint64_t> packets_rate_limited_{0};
+    alignas(64) std::atomic<uint64_t> attack_detections_{0};
+    
+public:
+    void increment_packets_processed() {
+        packets_processed_.fetch_add(1, std::memory_order_relaxed);
+    }
+    
+    void increment_packets_blocked() {
+        packets_blocked_.fetch_add(1, std::memory_order_relaxed);
+    }
+    
+    void increment_packets_rate_limited() {
+        packets_rate_limited_.fetch_add(1, std::memory_order_relaxed);
+    }
+    
+    void increment_attack_detections() {
+        attack_detections_.fetch_add(1, std::memory_order_relaxed);
+    }
+    
+    uint64_t get_packets_processed() const {
+        return packets_processed_.load(std::memory_order_acquire);
+    }
+    
+    uint64_t get_packets_blocked() const {
+        return packets_blocked_.load(std::memory_order_acquire);
+    }
+    
+    uint64_t get_packets_rate_limited() const {
+        return packets_rate_limited_.load(std::memory_order_acquire);
+    }
+    
+    uint64_t get_attack_detections() const {
+        return attack_detections_.load(std::memory_order_acquire);
+    }
+};
+
+// Global atomic metrics instance
+extern AtomicMetrics g_atomic_metrics;
 
 #endif // DDOS_INSPECTOR_HPP

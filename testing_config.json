@@ -1,0 +1,92 @@
+{
+  "testing_configuration": {
+    "description": "DDoS Inspector Testing Mode Configuration - Low thresholds for easy testing",
+    "version": "1.0.0",
+    "last_updated": "2025-06-19",
+    
+    "statistical_thresholds": {
+      "min_entropy_threshold": 0.1,
+      "min_rate_threshold": 10.0,
+      "entropy_multiplier": 0.15,
+      "rate_multiplier": 1.5,
+      "adaptation_factor": 0.2
+    },
+    
+    "behavioral_thresholds": {
+      "syn_flood": {
+        "min_threshold": 10.0,
+        "baseline_multiplier": 2.0,
+        "window_seconds": 10,
+        "adaptive_factor": 0.1
+      },
+      "ack_flood": {
+        "min_threshold": 5.0,
+        "baseline_multiplier": 1.5,
+        "window_seconds": 5,
+        "adaptive_factor": 0.1
+      },
+      "http_flood": {
+        "min_threshold": 20.0,
+        "baseline_multiplier": 3.0,
+        "window_seconds": 10,
+        "adaptive_factor": 0.05
+      },
+      "volume_attack": {
+        "packets_per_second_threshold": 5000,
+        "burst_threshold": 2000,
+        "sustained_threshold": 1000
+      },
+      "slowloris": {
+        "incomplete_connections_threshold": 5,
+        "connection_timeout_seconds": 5,
+        "min_request_rate": 0.1
+      }
+    },
+    
+    "detection_windows": {
+      "syn_window_seconds": 10,
+      "ack_window_seconds": 5,
+      "http_window_seconds": 10,
+      "volume_window_seconds": 1,
+      "cleanup_interval_seconds": 30
+    },
+    
+    "confidence_scoring": {
+      "base_stats_confidence": 0.3,
+      "base_behavior_confidence": 0.3,
+      "syn_bonus": 0.2,
+      "http_bonus": 0.25,
+      "rate_bonus": 0.3,
+      "entropy_bonus": 0.3
+    },
+    
+    "firewall_settings": {
+      "block_timeout_seconds": 60,
+      "rate_limit_base_pps": 10,
+      "queue_size_limit": 100,
+      "batch_size_limit": 10
+    },
+    
+    "advanced_detection": {
+      "distributed_attack_threshold": 5,
+      "geo_distributed_threshold": 3,
+      "protocol_mixing_threshold": 2,
+      "randomized_payload_entropy": 0.5,
+      "pulse_attack_variance": 0.1
+    },
+    
+    "memory_limits": {
+      "max_tracked_ips": 1000,
+      "max_connections_per_ip": 100,
+      "max_events_per_ip": 500,
+      "reputation_cache_size": 500
+    },
+    
+    "testing_mode_notes": [
+      "These thresholds are designed for testing environments",
+      "All values are significantly lower than production settings",
+      "Use scripts/toggle_testing_mode.sh to switch modes",
+      "Modify this file to adjust testing sensitivity"
+    ]
+  }
+}

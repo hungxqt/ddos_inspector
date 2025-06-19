@@ -11,6 +11,10 @@
 #include <deque>      // FIXED: Explicit include for deque operations
 #include <utility>    // FIXED: Explicit include for std::move, std::pair
 
+#ifdef TESTING
+#include "testing_config.hpp"
+#endif
+
 BehaviorTracker::BehaviorTracker() : behaviors(MAX_TRACKED_IPS) {
     last_cleanup = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
@@ -426,8 +430,12 @@ bool BehaviorTracker::detectSynFlood(const Behavior& b) const {
     adaptive_threshold = std::max(adaptive_threshold, g_threshold_tuning.min_syn_flood_threshold);
     
     #ifdef TESTING
-        const int syn_window_seconds = 10;
-        adaptive_threshold = std::max(adaptive_threshold * 0.1, 100.0); // Lower for testing
+        const int syn_window_seconds = g_testing_config.isLoaded() ? 
+            g_testing_config.getDetectionWindows().syn_window_seconds : 10;
+        adaptive_threshold = g_testing_config.isLoaded() ? 
+            std::max(adaptive_threshold * g_testing_config.getBehavioralThreshold("syn_flood").adaptive_factor, 
+                     g_testing_config.getBehavioralThreshold("syn_flood").min_threshold) :
+            std::max(adaptive_threshold * 0.1, 100.0); // Lower for testing
     #else
         const int syn_window_seconds = 60;
     #endif
@@ -521,8 +529,12 @@ bool BehaviorTracker::detectAckFlood(const Behavior& b) const {
     adaptive_threshold = std::max(adaptive_threshold, g_threshold_tuning.min_ack_flood_threshold);
     
     #ifdef TESTING
-        const int ack_window_seconds = 5;
-        adaptive_threshold = std::max(adaptive_threshold * 0.1, 50.0); // Lower for testing
+        const int ack_window_seconds = g_testing_config.isLoaded() ? 
+            g_testing_config.getDetectionWindows().ack_window_seconds : 5;
+        adaptive_threshold = g_testing_config.isLoaded() ? 
+            std::max(adaptive_threshold * g_testing_config.getBehavioralThreshold("ack_flood").adaptive_factor, 
+                     g_testing_config.getBehavioralThreshold("ack_flood").min_threshold) :
+            std::max(adaptive_threshold * 0.1, 50.0); // Lower for testing
     #else
         const int ack_window_seconds = 30;
     #endif
@@ -584,8 +596,12 @@ bool BehaviorTracker::detectHttpFlood(const Behavior& b) const {
     adaptive_threshold = std::max(adaptive_threshold, g_threshold_tuning.min_http_flood_threshold);
     
     #ifdef TESTING
-        const int http_window_seconds = 10;
-        adaptive_threshold = std::max(adaptive_threshold * 0.05, 100.0); // Much lower for testing
+        const int http_window_seconds = g_testing_config.isLoaded() ? 
+            g_testing_config.getDetectionWindows().http_window_seconds : 10;
+        adaptive_threshold = g_testing_config.isLoaded() ? 
+            std::max(adaptive_threshold * g_testing_config.getBehavioralThreshold("http_flood").adaptive_factor, 
+                     g_testing_config.getBehavioralThreshold("http_flood").min_threshold) :
+            std::max(adaptive_threshold * 0.05, 100.0); // Much lower for testing
     #else
         const int http_window_seconds = 120;
     #endif
@@ -798,7 +814,9 @@ bool BehaviorTracker::detectVolumeAttack(const Behavior& b) const {
     if (duration.count() > 0 && duration.count() <= 30) {
         double packets_per_second = static_cast<double>(b.hot_.total_packets.load()) / static_cast<double>(duration.count());
         #ifdef TESTING
-        return packets_per_second > 5000; // More realistic test threshold
+        double volume_threshold = g_testing_config.isLoaded() ? 
+            g_testing_config.getVolumeAttackThresholds().packets_per_second_threshold : 5000.0;
+        return packets_per_second > volume_threshold; // Use testing config threshold
         #else
         return packets_per_second > 20000;
         #endif

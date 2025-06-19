@@ -51,6 +51,25 @@ include(CTest)
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native -flto")
 
+# Handle TESTING flag from .env file
+set(TESTING_FLAG OFF)
+if(DEFINED ENV{TESTING})
+    string(TOLOWER "$ENV{TESTING}" TESTING_VALUE)
+    if(TESTING_VALUE STREQUAL "true" OR TESTING_VALUE STREQUAL "1" OR TESTING_VALUE STREQUAL "on")
+        set(TESTING_FLAG ON)
+        message(STATUS "TESTING mode enabled (low thresholds for testing)")
+    else()
+        message(STATUS "PRODUCTION mode enabled (production thresholds)")
+    endif()
+else()
+    message(STATUS "TESTING flag not set, defaulting to PRODUCTION mode")
+endif()
+
+# Add TESTING compile definition if enabled
+if(TESTING_FLAG)
+    add_compile_definitions(TESTING)
+endif()
+
 # Find required packages
 find_package(Threads REQUIRED)
 find_package(PkgConfig QUIET)
@@ -132,6 +151,16 @@ find_snort3()
 file(GLOB SOURCES "src/*.cpp")
 list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/ddos_inspector.cpp")
 
+# Add testing configuration files only if TESTING is enabled
+if(TESTING_FLAG)
+    # Ensure testing_config.cpp is included when TESTING is enabled
+    set(TESTING_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/testing_config.cpp")
+    if(EXISTS "${TESTING_SOURCES}")
+        list(APPEND SOURCES "${TESTING_SOURCES}")
+        message(STATUS "Including testing configuration support")
+    endif()
+endif()
+
 # Core library for shared functionality
 add_library(ddos_core STATIC ${SOURCES})
 
@@ -166,7 +195,10 @@ target_link_libraries(ddos_core
 )
 
 # Main Snort 3 plugin
-add_library(ddos_inspector SHARED src/ddos_inspector.cpp)
+add_library(ddos_inspector SHARED 
+    src/ddos_inspector.cpp
+    src/file_logger.cpp
+)
 
 target_include_directories(ddos_inspector
     PRIVATE

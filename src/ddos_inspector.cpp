@@ -3,6 +3,11 @@
 #include "firewall_action.hpp"
 #include "packet_data.hpp"
 #include "stats_engine.hpp"
+#include "file_logger.hpp"
+
+#ifdef TESTING
+#include "testing_config.hpp"
+#endif
 
 #ifdef __unix__
 #include <arpa/inet.h>
@@ -11,6 +16,13 @@
 #include <netinet/udp.h>
 #include <unistd.h>
 #endif
+
+// Define thread_local variable for deadlock prevention
+namespace DeadlockPrevention {
+    thread_local std::vector<LockLevel> acquired_locks;
+}
+
+// ...existing includes...
 
 #include <algorithm>
 #include <array>
@@ -673,6 +685,16 @@ bool DdosInspectorModule::end(const char *, int, SnortConfig *)
     // Log active threshold tuning configuration for operational visibility
     g_threshold_tuning.logConfiguration();
     
+    // Check for runtime testing mode from environment
+    const char* env_testing = std::getenv("TESTING");
+    if (env_testing) {
+        std::string testing_value = env_testing;
+        std::transform(testing_value.begin(), testing_value.end(), testing_value.begin(), ::tolower);
+        if (testing_value == "true" || testing_value == "1" || testing_value == "on") {
+            setRuntimeTestingMode(true);
+        }
+    }
+    
     // Validate all configured paths at configuration time
     if (!validateMetricsPath(metrics_file))
     {
@@ -749,53 +771,50 @@ void DdosInspectorModule::applyConfigurationProfile()
 
 bool DdosInspectorModule::validateMetricsPath(const std::string &path) const
 {
-    // Validate metrics file path for security
-    const std::vector<std::string> allowed_prefixes = {
-        "/var/log/ddos_inspector/", 
-        "/var/log/snort/",
-        "/tmp/ddos_inspector/",
-        "/tmp/", // Allow /tmp directory for fallback cases
-        "/home/", // Allow user home directories for development
-        "/opt/ddos_inspector/"};
+    if (path.empty())
+        return true; // Empty path is valid (disables metrics)
 
-    // Check if path starts with any allowed prefix
-    for (const auto &prefix : allowed_prefixes)
+    // Reject paths that could be security risks
+    if (path.find("..") != std::string::npos ||
+        path.find("//") != std::string::npos ||
+        path[0] != '/')
     {
-        if (path.find(prefix) == 0)
-        {
-            // Additional security checks
-            if (path.find("..") != std::string::npos)
-            {
-                return false; // No directory traversal
-            }
-            if (path.find("//") != std::string::npos)
-            {
-                return false; // No double slashes
-            }
-            
-            // Try to create the directory structure
-            try
-            {
-                std::filesystem::path file_path(path);
-                std::filesystem::path dir_path = file_path.parent_path();
-                
-                if (!std::filesystem::exists(dir_path))
-                {
-                    std::filesystem::create_directories(dir_path);
-                    DDosLogger::info("Created metrics directory: " + dir_path.string());
-                }
-                
-                return true;
-            }
-            catch (const std::filesystem::filesystem_error& e)
-            {
-                DDosLogger::error("Failed to create metrics directory: " + std::string(e.what()));
-                return false;
-            }
-        }
+        return false;
     }
 
-    return false; // Path not in allowed locations
+    return true;
+}
+
+// NEW: Runtime testing mode management methods
+void DdosInspectorModule::setRuntimeTestingMode(bool enabled) {
+    runtime_testing_mode = enabled;
+    g_threshold_tuning.setRuntimeTestingMode(enabled);
+    
+    if (enabled) {
+        DDosLogger::info("Runtime testing mode enabled - using low testing thresholds");
+    } else {
+        DDosLogger::info("Runtime testing mode disabled - using production thresholds");
+    }
+}
+
+bool DdosInspectorModule::isRuntimeTestingMode() const {
+    return runtime_testing_mode;
+}
+
+void DdosInspectorModule::reloadTestingConfiguration() {
+    #ifdef TESTING
+    if (g_testing_config.reload()) {
+        DDosLogger::info("Testing configuration reloaded from testing_config.json");
+        if (runtime_testing_mode) {
+            // Reapply testing thresholds with new configuration
+            g_threshold_tuning.applyRuntimeTestingThresholds();
+        }
+    } else {
+        DDosLogger::warning("Failed to reload testing configuration - using existing settings");
+    }
+    #else
+    DDosLogger::warning("Testing configuration reload not available - TESTING flag not defined");
+    #endif
 }
 
 //-------------------------------------------------------------------------
@@ -810,7 +829,8 @@ DdosInspector::DdosInspector(DdosInspectorModule *mod)
              << "   - Entropy threshold: " << mod->entropy_threshold << '\n'
              << "   - EWMA alpha: " << mod->ewma_alpha << '\n'
              << "   - Block timeout: " << mod->block_timeout << "s\n"
-             << "   - Metrics file: " << mod->metrics_file;
+             << "   - Metrics file: " << mod->metrics_file << '\n'
+             << "   - Runtime testing mode: " << (mod->runtime_testing_mode ? "enabled" : "disabled");
     DDosLogger::info(init_msg.str());
 
     allow_icmp = mod->allow_icmp;
@@ -819,10 +839,40 @@ DdosInspector::DdosInspector(DdosInspectorModule *mod)
     rate_limited_ips_file_path = mod->rate_limited_ips_file;
     config_profile = mod->config_profile;
     
+    // Initialize file logger with custom configurations
+    std::unordered_map<FileLogger::FileType, FileLogger::FileConfig> file_configs;
+    
+    file_configs[FileLogger::FileType::METRICS] = {
+        mod->metrics_file, 50 * 1024 * 1024, 3, true, 
+        std::chrono::milliseconds(5000), false
+    };
+    
+    file_configs[FileLogger::FileType::BLOCKED_IPS] = {
+        mod->blocked_ips_file, 10 * 1024 * 1024, 5, true,
+        std::chrono::milliseconds(2000), false
+    };
+    
+    file_configs[FileLogger::FileType::RATE_LIMITED_IPS] = {
+        mod->rate_limited_ips_file, 10 * 1024 * 1024, 5, true,
+        std::chrono::milliseconds(2000), false
+    };
+    
+    if (g_file_logger.initialize(file_configs)) {
+        g_file_logger.start();
+        DDosLogger::info("File logger initialized and started successfully");
+    } else {
+        DDosLogger::error("Failed to initialize file logger - file operations may not work");
+    }
+    
     // Initialize tuning parameters from module configuration
     g_threshold_tuning.adaptation_factor = mod->adaptation_factor;
     g_threshold_tuning.entropy_multiplier = mod->entropy_multiplier;
     g_threshold_tuning.rate_multiplier = mod->rate_multiplier;
+    
+    // Apply runtime testing mode if requested
+    if (mod->runtime_testing_mode) {
+        g_threshold_tuning.setRuntimeTestingMode(true);
+    }
 
     // Initialize components with configuration
     stats_engine = std::make_unique<StatsEngine>(mod->entropy_threshold, mod->ewma_alpha);
@@ -868,9 +918,66 @@ void DdosInspector::writeMetrics()
     // Update metrics every 5 seconds (handled by background thread)
     if (duration.count() >= 5)
     {
-        // Use temporary file for atomic writes
-        std::string temp_path = metrics_file_path + ".tmp";
-        writeMetricsToFile(temp_path);
+        // DEADLOCK-FREE: Use file logger instead of direct file operations
+        std::ostringstream metrics_data;
+        
+        // Build metrics content
+        double current_rate = stats_engine ? stats_engine->get_current_rate() : 0.0;
+        double current_entropy = stats_engine ? stats_engine->get_entropy() : 0.0;
+        double block_rate = calculateBlockRate();
+        
+        // Enhanced metrics with comprehensive information
+        metrics_data << "# DDoS Inspector Metrics - " << formatCurrentTime() << "\n";
+        metrics_data << "# Real-time network security analytics\n";
+        metrics_data << "# Configuration Profile: " << config_profile << "\n";
+        metrics_data << "# Adaptive Thresholds: " << (g_threshold_tuning.enable_adaptive_behavioral_thresholds ? "enabled" : "disabled") << "\n";
+        metrics_data << "# Testing Mode: " << (g_threshold_tuning.isRuntimeTestingMode() ? "enabled" : "disabled") << "\n\n";
+        
+        // Core packet processing metrics
+        metrics_data << "[TRAFFIC_STATS]\n";
+        metrics_data << "packets_processed=" << packets_processed.load() << "\n";
+        metrics_data << "packets_blocked=" << packets_blocked.load() << "\n";
+        metrics_data << "packets_rate_limited=" << packets_rate_limited.load() << "\n";
+        metrics_data << "current_rate_pps=" << current_rate << "\n";
+        metrics_data << "current_entropy=" << current_entropy << "\n";
+        metrics_data << "block_rate_per_minute=" << block_rate << "\n";
+        metrics_data << "false_positives=" << false_positives.load() << "\n\n";
+        
+        // Attack detection metrics
+        metrics_data << "[ATTACK_DETECTION]\n";
+        metrics_data << "syn_flood_detections=" << syn_flood_detections.load() << "\n";
+        metrics_data << "http_flood_detections=" << http_flood_detections.load() << "\n";
+        metrics_data << "slowloris_detections=" << slowloris_detections.load() << "\n";
+        metrics_data << "udp_flood_detections=" << udp_flood_detections.load() << "\n";
+        metrics_data << "icmp_flood_detections=" << icmp_flood_detections.load() << "\n";
+        metrics_data << "amplification_detections=" << amplification_detections.load() << "\n\n";
+        
+        // Current firewall status
+        metrics_data << "[FIREWALL_STATUS]\n";
+        metrics_data << "total_blocked_ips=" << (firewall_action ? firewall_action->get_blocked_count() : 0) << "\n";
+        metrics_data << "total_rate_limited_ips=" << (firewall_action ? firewall_action->get_rate_limited_count() : 0) << "\n";
+        metrics_data << "current_threat_level=" << (firewall_action ? static_cast<int>(firewall_action->get_current_threat_level()) : 0) << "\n\n";
+        
+        // Adaptive threshold status
+        metrics_data << "[ADAPTIVE_THRESHOLDS]\n";
+        metrics_data << "entropy_threshold=" << adaptive_thresholds.entropy_threshold << "\n";
+        metrics_data << "rate_threshold=" << adaptive_thresholds.rate_threshold << "\n";
+        metrics_data << "syn_flood_threshold=" << adaptive_thresholds.syn_flood_threshold << "\n";
+        metrics_data << "ack_flood_threshold=" << adaptive_thresholds.ack_flood_threshold << "\n";
+        metrics_data << "http_flood_threshold=" << adaptive_thresholds.http_flood_threshold << "\n";
+        metrics_data << "baseline_entropy=" << adaptive_thresholds.baseline_entropy << "\n";
+        metrics_data << "baseline_rate=" << adaptive_thresholds.baseline_rate << "\n\n";
+        
+        // Performance metrics
+        metrics_data << "[PERFORMANCE]\n";
+        metrics_data << "total_processing_time_us=" << total_processing_time_us.load() << "\n";
+        metrics_data << "max_processing_time_us=" << max_processing_time_us.load() << "\n";
+        metrics_data << "avg_processing_time_us=" << (packets_processed.load() > 0 ? 
+            total_processing_time_us.load() / packets_processed.load() : 0) << "\n\n";
+        
+        // Use file logger for thread-safe, deadlock-free writing
+        g_file_logger.write_metrics_file(metrics_data.str());
+        
         last_metrics_update = now;
 
         // Write IP lists less frequently (every 30 seconds)
@@ -878,8 +985,9 @@ void DdosInspector::writeMetrics()
             std::chrono::duration_cast<std::chrono::seconds>(now - last_ip_list_update);
         if (ip_list_duration.count() >= 30 && firewall_action)
         {
-            writeBlockedIpsFile(firewall_action->get_blocked_ips());
-            writeRateLimitedIpsFile(firewall_action->get_rate_limited_ips());
+            // DEADLOCK-FREE: Use file logger for IP lists
+            g_file_logger.write_blocked_ips_file(firewall_action->get_blocked_ips());
+            g_file_logger.write_rate_limited_ips_file(firewall_action->get_rate_limited_ips());
             last_ip_list_update = now;
         }
     }
@@ -1471,69 +1579,76 @@ void DdosInspector::updateAdaptiveThresholds()
     // Update thresholds every 10 minutes
     if (duration.count() >= 10)
     {
-        std::lock_guard<std::mutex> lock(metrics_mutex);
+        // DEADLOCK FIX: Use timeout-based locking and avoid nested locks
+        try {
+            TimeoutLockGuard<std::mutex> lock(metrics_mutex, std::chrono::milliseconds(500));
 
-        // Update baseline entropy and rate based on recent observations
-        if (stats_engine)
-        {
-            double current_entropy = stats_engine->get_entropy();
-            double current_rate = stats_engine->get_current_rate();
+            // Update baseline entropy and rate based on recent observations
+            if (stats_engine)
+            {
+                double current_entropy = stats_engine->get_entropy();
+                double current_rate = stats_engine->get_current_rate();
 
-            // Gradually adapt baselines using EWMA with configurable factor
-            adaptive_thresholds.baseline_entropy =
-                g_threshold_tuning.adaptation_factor * current_entropy +
-                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_entropy;
+                // Gradually adapt baselines using EWMA with configurable factor
+                adaptive_thresholds.baseline_entropy =
+                    g_threshold_tuning.adaptation_factor * current_entropy +
+                    (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_entropy;
 
-            adaptive_thresholds.baseline_rate =
-                g_threshold_tuning.adaptation_factor * current_rate +
-                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_rate;
+                adaptive_thresholds.baseline_rate =
+                    g_threshold_tuning.adaptation_factor * current_rate +
+                    (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_rate;
 
-            // Adjust detection thresholds based on baselines with configurable multipliers
-            adaptive_thresholds.entropy_threshold =
-                std::max(g_threshold_tuning.min_entropy_threshold, 
-                        adaptive_thresholds.baseline_entropy * g_threshold_tuning.entropy_multiplier);
+                // Adjust detection thresholds based on baselines with configurable multipliers
+                adaptive_thresholds.entropy_threshold =
+                    std::max(g_threshold_tuning.min_entropy_threshold, 
+                            adaptive_thresholds.baseline_entropy * g_threshold_tuning.entropy_multiplier);
 
-            adaptive_thresholds.rate_threshold =
-                std::max(g_threshold_tuning.min_rate_threshold, 
-                        adaptive_thresholds.baseline_rate * g_threshold_tuning.rate_multiplier);
+                adaptive_thresholds.rate_threshold =
+                    std::max(g_threshold_tuning.min_rate_threshold, 
+                            adaptive_thresholds.baseline_rate * g_threshold_tuning.rate_multiplier);
+            }
+
+            // Update behavioral thresholds based on behavior tracker metrics
+            if (behavior_tracker && g_threshold_tuning.enable_adaptive_behavioral_thresholds)
+            {
+                // Get current behavioral rates
+                double current_syn_rate = behavior_tracker->getGlobalSynRate();
+                double current_ack_rate = behavior_tracker->getGlobalAckRate();
+                double current_http_rate = behavior_tracker->getGlobalHttpRate();
+
+                // Update baseline behavioral rates using EWMA
+                adaptive_thresholds.baseline_syn_rate =
+                    g_threshold_tuning.adaptation_factor * current_syn_rate +
+                    (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_syn_rate;
+
+                adaptive_thresholds.baseline_ack_rate =
+                    g_threshold_tuning.adaptation_factor * current_ack_rate +
+                    (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_ack_rate;
+
+                adaptive_thresholds.baseline_http_rate =
+                    g_threshold_tuning.adaptation_factor * current_http_rate +
+                    (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_http_rate;
+
+                // Update adaptive behavioral thresholds with multipliers and minimums
+                adaptive_thresholds.syn_flood_threshold =
+                    std::max(g_threshold_tuning.min_syn_flood_threshold,
+                            adaptive_thresholds.baseline_syn_rate * g_threshold_tuning.syn_flood_multiplier);
+
+                adaptive_thresholds.ack_flood_threshold =
+                    std::max(g_threshold_tuning.min_ack_flood_threshold,
+                            adaptive_thresholds.baseline_ack_rate * g_threshold_tuning.ack_flood_multiplier);
+
+                adaptive_thresholds.http_flood_threshold =
+                    std::max(g_threshold_tuning.min_http_flood_threshold,
+                            adaptive_thresholds.baseline_http_rate * g_threshold_tuning.http_flood_multiplier);
+            }
+
+            adaptive_thresholds.last_update = now;
+        } catch (const std::runtime_error& e) {
+            // Timeout occurred - skip this update to prevent deadlock
+            DDosLogger::warning("Adaptive threshold update skipped due to lock timeout");
+            return;
         }
-
-        // Update behavioral thresholds based on behavior tracker metrics
-        if (behavior_tracker && g_threshold_tuning.enable_adaptive_behavioral_thresholds)
-        {
-            // Get current behavioral rates
-            double current_syn_rate = behavior_tracker->getGlobalSynRate();
-            double current_ack_rate = behavior_tracker->getGlobalAckRate();
-            double current_http_rate = behavior_tracker->getGlobalHttpRate();
-
-            // Update baseline behavioral rates using EWMA
-            adaptive_thresholds.baseline_syn_rate =
-                g_threshold_tuning.adaptation_factor * current_syn_rate +
-                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_syn_rate;
-
-            adaptive_thresholds.baseline_ack_rate =
-                g_threshold_tuning.adaptation_factor * current_ack_rate +
-                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_ack_rate;
-
-            adaptive_thresholds.baseline_http_rate =
-                g_threshold_tuning.adaptation_factor * current_http_rate +
-                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_http_rate;
-
-            // Update adaptive behavioral thresholds with multipliers and minimums
-            adaptive_thresholds.syn_flood_threshold =
-                std::max(g_threshold_tuning.min_syn_flood_threshold,
-                        adaptive_thresholds.baseline_syn_rate * g_threshold_tuning.syn_flood_multiplier);
-
-            adaptive_thresholds.ack_flood_threshold =
-                std::max(g_threshold_tuning.min_ack_flood_threshold,
-                        adaptive_thresholds.baseline_ack_rate * g_threshold_tuning.ack_flood_multiplier);
-
-            adaptive_thresholds.http_flood_threshold =
-                std::max(g_threshold_tuning.min_http_flood_threshold,
-                        adaptive_thresholds.baseline_http_rate * g_threshold_tuning.http_flood_multiplier);
-        }
-
-        adaptive_thresholds.last_update = now;
     }
 }
 
@@ -1548,29 +1663,71 @@ uint8_t DdosInspector::calculateConfidenceScore(const PacketData &pkt_data, bool
     if (behavior_anomaly)
         confidence += g_threshold_tuning.confidence_base_behavior;
 
-    // Additional confidence factors using consolidated helper
-    if (stats_engine)
-    {
+    // Additional confidence modifiers
+    double extra_confidence = 0.0;
+    
+    // Calculate rate ratio if we have stats engine data
+    if (stats_engine) {
         double current_rate = stats_engine->get_current_rate();
+        double baseline_rate = adaptive_thresholds.baseline_rate;
+        double rate_ratio = current_rate / std::max(baseline_rate, g_threshold_tuning.min_rate_threshold);
+        if (rate_ratio > g_threshold_tuning.rate_ratio_high_threshold) {
+            extra_confidence += g_threshold_tuning.confidence_rate_high_bonus;
+        } else if (rate_ratio > g_threshold_tuning.rate_ratio_med_threshold) {
+            extra_confidence += g_threshold_tuning.confidence_rate_med_bonus;
+        }
+        
+        // Calculate entropy ratio
         double current_entropy = stats_engine->get_entropy();
-        confidence += calculateExtraConfidence(current_rate, current_entropy,
-                                             adaptive_thresholds.baseline_rate,
-                                             adaptive_thresholds.baseline_entropy);
+        double entropy_ratio = current_entropy / std::max(adaptive_thresholds.baseline_entropy, g_threshold_tuning.min_entropy_threshold);
+        if (entropy_ratio > g_threshold_tuning.entropy_ratio_high_threshold) {
+            extra_confidence += g_threshold_tuning.confidence_entropy_high_bonus;
+        } else if (entropy_ratio > g_threshold_tuning.entropy_ratio_med_threshold) {
+            extra_confidence += g_threshold_tuning.confidence_entropy_med_bonus;
+        }
     }
 
-    // Protocol-specific confidence adjustments using configurable values
-    if (pkt_data.is_syn && !pkt_data.is_ack)
-    {
-        confidence += g_threshold_tuning.confidence_syn_bonus;
+    // SYN flood bonus
+    if (pkt_data.is_syn && !pkt_data.is_ack) {
+        extra_confidence += g_threshold_tuning.confidence_syn_bonus;
     }
 
-    if (pkt_data.is_http && pkt_data.payload_view.length() < 10)
-    {
-        confidence += g_threshold_tuning.confidence_http_short_bonus;
+    // Short HTTP request bonus (potential attack)
+    if (pkt_data.is_http && pkt_data.payload.length() < 100) {
+        extra_confidence += g_threshold_tuning.confidence_http_short_bonus;
     }
 
-    // Convert to uint8_t in hundredths (0-100) and clamp to valid range
-    return static_cast<uint8_t>(std::clamp(confidence * 100.0, 0.0, 100.0));
+    confidence += extra_confidence;
+    
+    // Clamp to valid range and convert to percentage (0-100)
+    return static_cast<uint8_t>(std::min(100.0, std::max(0.0, confidence * 100.0)));
+}
+
+// NEW: Runtime testing mode management methods
+void DdosInspector::setRuntimeTestingMode(bool enabled) {
+    g_threshold_tuning.setRuntimeTestingMode(enabled);
+    
+    // Force threshold recalculation
+    reloadAdaptiveThresholds();
+    
+    DDosLogger::info(enabled ? "Runtime testing mode enabled" : "Runtime testing mode disabled");
+}
+
+bool DdosInspector::isRuntimeTestingMode() const {
+    return g_threshold_tuning.isRuntimeTestingMode();
+}
+
+void DdosInspector::reloadAdaptiveThresholds() {
+    std::lock_guard<std::mutex> lock(metrics_mutex);
+    
+    // Force immediate threshold update
+    auto now = std::chrono::steady_clock::now();
+    adaptive_thresholds.last_update = now - std::chrono::minutes(11); // Force update on next call
+    
+    // Update thresholds immediately
+    updateAdaptiveThresholds();
+    
+    DDosLogger::info("Adaptive thresholds reloaded with current configuration");
 }
 
 bool DdosInspector::detectAmplificationAttack(const PacketData &pkt_data, uint8_t proto)
@@ -1749,181 +1906,7 @@ void DdosInspector::stopMetricsThread()
     }
 }
 
-void DdosInspector::writeBlockedIpsFile(const std::vector<std::string> &blocked_ips)
-{
-    std::lock_guard<std::mutex> file_lock(file_operations_mutex);
-    
-    // Ensure directory exists
-    try
-    {
-        std::filesystem::path file_path(blocked_ips_file_path);
-        std::filesystem::path dir_path = file_path.parent_path();
-        if (!dir_path.empty() && !std::filesystem::exists(dir_path))
-        {
-            std::filesystem::create_directories(dir_path);
-        }
-    }
-    catch (const std::filesystem::filesystem_error& e)
-    {
-        DDosLogger::error("Failed to create directory for blocked IPs file: " + std::string(e.what()));
-        return;
-    }
-    
-    std::string temp_file = blocked_ips_file_path + ".tmp";
-    std::ofstream file(temp_file);
-
-    if (!file.is_open())
-    {
-        DDosLogger::error("Failed to create blocked IPs file: " + temp_file + " - " + 
-                         std::string(std::strerror(errno)));
-        return;
-    }
-
-    file << "# DDoS Inspector - Blocked IPs List\n";
-    file << "# Last updated: " << formatCurrentTime() << '\n';
-    file << "# Format: IP_ADDRESS (remaining: XXXs, type: ATTACK_TYPE)\n";
-    file << "# Total blocked IPs: " << blocked_ips.size() << "\n\n";
-
-    if (blocked_ips.empty())
-    {
-        file << "# No IPs currently blocked\n";
-    }
-    else
-    {
-        for (const auto &ip_info : blocked_ips)
-        {
-            file << ip_info << "\n";
-        }
-    }
-
-    file.close();
-
-    // Atomically move temp file to final location with cross-device support
-    std::error_code ec;
-    std::filesystem::rename(temp_file, blocked_ips_file_path, ec);
-    
-    if (ec)
-    {
-        if (ec == std::errc::cross_device_link)
-        {
-            try
-            {
-                std::filesystem::copy_file(temp_file, blocked_ips_file_path, 
-                                         std::filesystem::copy_options::overwrite_existing);
-                std::filesystem::remove(temp_file);
-            }
-            catch (const std::filesystem::filesystem_error& e)
-            {
-                DDosLogger::error("Failed to copy blocked IPs file across devices: " + std::string(e.what()));
-            }
-        }
-        else
-        {
-            DDosLogger::error("Failed to move blocked IPs file - " + ec.message());
-        }
-    }
-}
-
-void DdosInspector::writeRateLimitedIpsFile(const std::vector<std::string> &rate_limited_ips)
-{
-    std::lock_guard<std::mutex> file_lock(file_operations_mutex);
-    
-    // Ensure directory exists
-    try
-    {
-        std::filesystem::path file_path(rate_limited_ips_file_path);
-        std::filesystem::path dir_path = file_path.parent_path();
-        if (!dir_path.empty() && !std::filesystem::exists(dir_path))
-        {
-            std::filesystem::create_directories(dir_path);
-        }
-    }
-    catch (const std::filesystem::filesystem_error& e)
-    {
-        DDosLogger::error("Failed to create directory for rate limited IPs file: " + std::string(e.what()));
-        return;
-    }
-    
-    // Implemented: Using LRU cache to preserve long-term offenders and improve memory efficiency
-    // Combine firewall data with our LRU cache for comprehensive tracking
-    cleanupExpiredRateLimitedIPs();
-    std::vector<std::string> cached_ips = getRateLimitedIpsFromCache();
-    
-    std::string temp_file = rate_limited_ips_file_path + ".tmp";
-    std::ofstream file(temp_file);
-
-    if (!file.is_open())
-    {
-        DDosLogger::error("Failed to create rate limited IPs file: " + temp_file + " - " + 
-                         std::string(std::strerror(errno)));
-        return;
-    }
-
-    file << "# DDoS Inspector - Rate Limited IPs List\n";
-    file << "# Last updated: " << formatCurrentTime() << '\n';
-    file << "# Format: IP_ADDRESS (level X) or IP_ADDRESS (added Xm ago)\n";
-    file << "# Rate limit levels: 1=10/sec, 2=5/sec, 3=2/sec, 4=1/sec\n";
-    file << "# Current active: " << rate_limited_ips.size() 
-         << ", Historical (24h): " << cached_ips.size() << "\n\n";
-
-    // Write currently active rate-limited IPs
-    if (!rate_limited_ips.empty()) {
-        file << "# Currently Active Rate Limited IPs:\n";
-        for (const auto &ip_info : rate_limited_ips)
-        {
-            file << ip_info << "\n";
-            // Add to our LRU cache for historical tracking
-            size_t space_pos = ip_info.find(' ');
-            if (space_pos != std::string::npos) {
-                addToRateLimitedCache(ip_info.substr(0, space_pos));
-            } else {
-                addToRateLimitedCache(ip_info);
-            }
-        }
-        file << "\n";
-    }
-    
-    // Write historical rate-limited IPs from cache
-    if (!cached_ips.empty()) {
-        file << "# Historical Rate Limited IPs (last 24 hours):\n";
-        for (const auto &ip_info : cached_ips)
-        {
-            file << ip_info << "\n";
-        }
-    }
-    
-    if (rate_limited_ips.empty() && cached_ips.empty())
-    {
-        file << "# No IPs currently or recently rate limited\n";
-    }
-
-    file.close();
-
-    // Atomically move temp file to final location with cross-device support
-    std::error_code ec;
-    std::filesystem::rename(temp_file, rate_limited_ips_file_path, ec);
-    
-    if (ec)
-    {
-        if (ec == std::errc::cross_device_link)
-        {
-            try
-            {
-                std::filesystem::copy_file(temp_file, rate_limited_ips_file_path, 
-                                         std::filesystem::copy_options::overwrite_existing);
-                std::filesystem::remove(temp_file);
-            }
-            catch (const std::filesystem::filesystem_error& e)
-            {
-                DDosLogger::error("Failed to copy rate limited IPs file across devices: " + std::string(e.what()));
-            }
-        }
-        else
-        {
-            DDosLogger::error("Failed to move rate limited IPs file - " + ec.message());
-        }
-    }
-}
+// NOTE: File writing methods removed - now handled by FileLogger
 
 // LRU cache implementation for rate-limited IPs with TTL-based cleanup
 void DdosInspector::cleanupExpiredRateLimitedIPs()
@@ -1959,7 +1942,7 @@ void DdosInspector::addToRateLimitedCache(const std::string& ip)
     if (cache_it != rate_limited_cache.end()) {
         // Update timestamp and move to front of LRU
         cache_it->second = now;
-        auto lru_it = rate_limited_lru_map.find(ip);
+               auto lru_it = rate_limited_lru_map.find(ip);
         if (lru_it != rate_limited_lru_map.end()) {
             rate_limited_lru_list.erase(lru_it->second);
             rate_limited_lru_list.push_front(ip);
@@ -1967,6 +1950,7 @@ void DdosInspector::addToRateLimitedCache(const std::string& ip)
         }
         return;
     }
+ 
     
     // Enforce cache size limit
     if (rate_limited_cache.size() >= MAX_RATE_LIMITED_ENTRIES) {
@@ -2056,192 +2040,7 @@ std::string DdosInspector::getIPv6String(const snort::ip::snort_in6_addr *addr)
     return "::"; // Fallback for errors
 }
 
-// Thread-safe metrics writing with temporary file
-void DdosInspector::writeMetricsToFile(const std::string &temp_path)
-{
-    // Protect all file operations with mutex to prevent collisions
-    std::lock_guard<std::mutex> file_lock(file_operations_mutex);
-    
-    // Ensure directory exists for metrics file
-    try
-    {
-        std::filesystem::path file_path(temp_path);
-        std::filesystem::path dir_path = file_path.parent_path();
-        if (!dir_path.empty() && !std::filesystem::exists(dir_path))
-        {
-            std::filesystem::create_directories(dir_path);
-        }
-    }
-    catch (const std::filesystem::filesystem_error& e)
-    {
-        DDosLogger::error("Failed to create directory for metrics file: " + std::string(e.what()));
-        return;
-    }
-    
-    // Create snapshot of metrics outside the data lock to minimize lock time
-    struct MetricsSnapshot
-    {
-        uint64_t packets_processed;
-        uint64_t packets_blocked;
-        uint64_t packets_rate_limited;
-        uint64_t syn_floods;
-        uint64_t http_floods;
-        uint64_t slowloris_attacks;
-        uint64_t udp_floods;
-        uint64_t icmp_floods;
-        uint64_t amplification_attacks;
-        uint64_t false_positives;
-        double current_rate;
-        double entropy;
-        double block_rate;
-        uint32_t connection_count;
-        uint32_t blocked_ip_count;
-        std::string config_profile;
-        uint64_t detection_time_ms;
-        uint64_t avg_processing_time_us;
-        uint64_t max_processing_time_us;
-    } snapshot;
-
-    // Take snapshot with minimal lock time
-    {
-        std::lock_guard<std::mutex> lock(metrics_mutex);
-        snapshot.packets_processed = packets_processed.load();
-        snapshot.packets_blocked = packets_blocked.load();
-        snapshot.packets_rate_limited = packets_rate_limited.load();
-        snapshot.syn_floods = syn_flood_detections.load();
-        snapshot.http_floods = http_flood_detections.load();
-        snapshot.slowloris_attacks = slowloris_detections.load();
-        snapshot.udp_floods = udp_flood_detections.load();
-        snapshot.icmp_floods = icmp_flood_detections.load();
-        snapshot.amplification_attacks = amplification_detections.load();
-        snapshot.false_positives = false_positives.load();
-        snapshot.config_profile = config_profile;
-
-        // Get metrics from components outside the mutex
-    }
-
-    // Get component metrics (these may have their own locks)
-    if (stats_engine)
-    {
-        snapshot.current_rate = stats_engine->get_current_rate();
-        snapshot.entropy = stats_engine->get_entropy();
-        snapshot.block_rate = calculateBlockRate(); // Implemented: Real block rate calculation
-    }
-    else
-    {
-        snapshot.current_rate = 0.0;
-        snapshot.entropy = 0.0;
-        snapshot.block_rate = 0.0;
-    }
-
-    if (behavior_tracker)
-    {
-        snapshot.connection_count = behavior_tracker->get_connection_count();
-    }
-    else
-    {
-        snapshot.connection_count = 0;
-    }
-
-    if (firewall_action)
-    {
-        // Get real blocked IP count from firewall action
-        auto blocked_ips = firewall_action->get_blocked_ips();
-        snapshot.blocked_ip_count = blocked_ips.size();
-        current_blocked_count.store(snapshot.blocked_ip_count, std::memory_order_relaxed);
-    }
-    else
-    {
-        snapshot.blocked_ip_count = 0;
-    }
-
-    // Performance metrics
-    auto detection_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                              std::chrono::steady_clock::now() - detection_start_time)
-                              .count();
-    snapshot.detection_time_ms = detection_time;
-    snapshot.avg_processing_time_us =
-        (snapshot.packets_processed > 0
-             ? total_processing_time_us.load() / snapshot.packets_processed
-             : 0);
-    snapshot.max_processing_time_us = max_processing_time_us.load();
-
-    // Write to temporary file
-    std::ofstream temp_file(temp_path);
-    if (!temp_file.is_open())
-    {
-        // Log error but don't throw - this is a monitoring function
-        DDosLogger::error("Failed to create temporary metrics file: " + temp_path + " - " + 
-                         std::string(std::strerror(errno)));
-        return;
-    }
-
-    // Write all metrics
-    temp_file << "packets_processed:" << snapshot.packets_processed << '\n';
-    temp_file << "packets_blocked:" << snapshot.packets_blocked << '\n';
-    temp_file << "packets_rate_limited:" << snapshot.packets_rate_limited << '\n';
-    temp_file << "current_rate:" << std::fixed << std::setprecision(2) << snapshot.current_rate
-              << '\n';
-    temp_file << "entropy:" << std::fixed << std::setprecision(4) << snapshot.entropy << '\n';
-    temp_file << "block_rate:" << std::fixed << std::setprecision(2) << snapshot.block_rate << '\n';
-    temp_file << "connection_count:" << snapshot.connection_count << '\n';
-    temp_file << "blocked_ip_count:" << snapshot.blocked_ip_count << '\n';
-
-    // Attack type counters
-    temp_file << "syn_floods:" << snapshot.syn_floods << '\n';
-    temp_file << "http_floods:" << snapshot.http_floods << '\n';
-    temp_file << "slowloris_attacks:" << snapshot.slowloris_attacks << '\n';
-    temp_file << "udp_floods:" << snapshot.udp_floods << '\n';
-    temp_file << "icmp_floods:" << snapshot.icmp_floods << '\n';
-    temp_file << "amplification_attacks:" << snapshot.amplification_attacks << '\n';
-    temp_file << "false_positives:" << snapshot.false_positives << '\n';
-
-    // Performance metrics
-    temp_file << "detection_time_ms:" << snapshot.detection_time_ms << '\n';
-    temp_file << "avg_processing_time_us:" << snapshot.avg_processing_time_us << '\n';
-    temp_file << "max_processing_time_us:" << snapshot.max_processing_time_us << '\n';
-
-    // Configuration profile info
-    temp_file << "config_profile:" << snapshot.config_profile << '\n';
-
-    temp_file.close();
-
-    // Atomically move temporary file to final location with cross-device support
-    std::error_code ec;
-    std::filesystem::rename(temp_path, metrics_file_path, ec);
-    
-    if (ec)
-    {
-        if (ec == std::errc::cross_device_link)
-        {
-            // Cross-device move - fall back to copy + sync + remove
-            try
-            {
-                std::filesystem::copy_file(temp_path, metrics_file_path, 
-                                         std::filesystem::copy_options::overwrite_existing);
-                
-                // Sync the file and directory
-                std::ofstream sync_file(metrics_file_path, std::ios::app);
-                if (sync_file.is_open())
-                {
-                    sync_file.flush();
-                    sync_file.close();
-                }
-                
-                std::filesystem::remove(temp_path);
-            }
-            catch (const std::filesystem::filesystem_error& e)
-            {
-                DDosLogger::error("Failed to copy metrics file across devices: " + std::string(e.what()));
-            }
-        }
-        else
-        {
-            DDosLogger::error("Failed to move metrics file from " + temp_path + " to " + 
-                             metrics_file_path + " - " + ec.message());
-        }
-    }
-}
+// NOTE: writeMetricsToFile method removed - now handled by FileLogger
 
 // Protocol parsing helpers to reduce eval() function size
 std::pair<std::string, std::string> DdosInspector::extractAddresses(snort::Packet *p)
