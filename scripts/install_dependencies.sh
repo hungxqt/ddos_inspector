@@ -507,11 +507,13 @@ apt-get install -y \
     hping3 \
     nmap \
     tcpdump \
-    wireshark-common \
     iptraf-ng \
     htop \
     iftop \
     nethogs || print_warning "Some network tools failed to install (non-critical)"
+
+# wireshark-common temporarily disabled to avoid interactive prompts
+print_info "wireshark-common installation temporarily disabled (avoids interactive prompts)"
 
 # Install additional development libraries
 print_info "Installing additional development libraries..."
