@@ -70,7 +70,7 @@ docker logs ddos_inspector | grep "Interface being monitored"
 sudo nft list set inet filter ddos_ip_set
 
 # Monitor real-time stats
-watch cat ./data/ddos_inspector_stats
+watch cat ./data/metrics.log
 ```
 
 ## 🛡️ How Host Firewall Integration Works
@@ -107,7 +107,7 @@ hping3 -S -p 80 --flood <your-host-ip>
 ### **Test 2: Monitor Detection**
 ```bash
 # Watch real-time stats
-watch cat ./data/ddos_inspector_stats
+watch cat ./data/metrics.log
 
 # Check detection logs
 docker logs -f ddos_inspector | grep "SYN_FLOOD\|blocked"
@@ -151,7 +151,7 @@ ddos_inspector = {
     entropy_threshold = 2.0,
     ewma_alpha = 0.1,
     block_timeout = 600,
-    metrics_file = "/app/data/ddos_inspector_stats"
+    metrics_file = "/app/data/metrics.log"
 }
 ```
 
@@ -184,7 +184,7 @@ docker inspect ddos_inspector | grep -A 10 "CapAdd"
 ### **Issue: Stats File Not Updated**
 ```bash
 # Check file permissions
-ls -la ./data/ddos_inspector_stats
+ls -la ./data/metrics.log
 
 # Verify container can write to data directory
 docker exec ddos_inspector touch /app/data/test_write

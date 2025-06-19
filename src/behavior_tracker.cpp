@@ -1,4 +1,5 @@
 #include "behavior_tracker.hpp"
+#include "ddos_inspector.hpp"  // For g_threshold_tuning
 #include <atomic>  // FIXED: Add missing atomic header
 #include <vector>
 #include <cmath>
@@ -372,42 +373,84 @@ void BehaviorTracker::cleanupOldEvents(Behavior& b) {
     }
 }
 
+void BehaviorTracker::cleanup_expired_behaviors() {
+    std::lock_guard<std::mutex> lock(cleanup_mutex);
+    auto now = std::chrono::steady_clock::now();
+    
+    // Note: With LRU cache, old entries are automatically evicted
+    // This method can be used for additional cleanup logic if needed
+    last_cleanup = now;
+}
+
+void BehaviorTracker::force_cleanup_if_needed() {
+    // Implement aggressive cleanup when approaching memory limits
+    std::lock_guard<std::mutex> lock(cleanup_mutex);
+    
+    size_t current_size = behaviors.size();
+    size_t threshold = static_cast<size_t>(BehaviorConfig::MAX_TRACKED_IPS * 0.95); // 95% full
+    
+    if (current_size >= threshold) {
+        // Force eviction of old entries - LRU cache handles this automatically
+        // But we can also clean up based on activity level
+        std::vector<std::string> candidates_for_removal;
+        
+        auto cutoff_time = std::chrono::steady_clock::now() - std::chrono::minutes(30);
+        
+        behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+            if (b.last_seen < cutoff_time) {
+                candidates_for_removal.push_back(ip);
+            }
+        });
+        
+        // Remove inactive IPs
+        for (const auto& ip : candidates_for_removal) {
+            behaviors.erase(ip);
+            if (behaviors.size() < threshold) {
+                break; // Stop when we're under threshold
+            }
+        }
+    }
+}
+
 bool BehaviorTracker::detectSynFlood(const Behavior& b) const {
-    // Real-world adaptive thresholds based on network characteristics and traffic context
+    // NEW: Adaptive thresholds based on baseline and environmental factors
+    double adaptive_threshold = calculateAdaptiveSynFloodThreshold(b);
+    double time_factor = calculateTimeOfDayFactor();
+    double network_factor = calculateNetworkLoadFactor();
+    double legitimacy_multiplier = calculateLegitimacyMultiplier(b);
+    
+    // Apply environmental adjustments
+    adaptive_threshold *= time_factor * network_factor * legitimacy_multiplier;
+    
+    // Ensure minimum threshold for security
+    adaptive_threshold = std::max(adaptive_threshold, g_threshold_tuning.min_syn_flood_threshold);
+    
     #ifdef TESTING
-        const int half_open_threshold = 1000;  // Closer to real attacks
         const int syn_window_seconds = 10;
-        const int syn_count_threshold = 500;   // Higher for realism
+        adaptive_threshold = std::max(adaptive_threshold * 0.1, 100.0); // Lower for testing
     #else
-        // Production thresholds based on real-world DDoS analysis
-        const int half_open_threshold = 5000;
         const int syn_window_seconds = 60;
-        const int syn_count_threshold = 10000;
     #endif
     
-    // Multi-factor SYN flood detection with real-world considerations
+    // Multi-factor SYN flood detection with adaptive considerations
     
     // 1. Classic SYN flood: too many half-open connections
-    if (b.hot_.half_open.load() > half_open_threshold) {  // FIXED: Use hot_ structure with atomic load
+    if (b.hot_.half_open.load() > adaptive_threshold) {
         return true;
     }
     
-    // 2. Rate-based SYN flood with time-series analysis
-    uint64_t syn_count_recent = 0;
-    uint64_t total_events_recent = 0;
-    uint64_t legitimate_acks = 0;
-    // 2. Rate-based SYN flood with time-series analysis using optimized rolling counters
-    syn_count_recent = b.hot_.syn_count_recent.load(std::memory_order_relaxed);  // FIXED: Use hot_ structure
-    total_events_recent = b.hot_.total_events_recent.load(std::memory_order_relaxed);  // FIXED: Use hot_ structure
-    legitimate_acks = b.hot_.ack_count_recent.load(std::memory_order_relaxed);  // FIXED: Use hot_ structure
+    // 2. Rate-based SYN flood with adaptive baseline comparison
+    uint64_t syn_count_recent = b.hot_.syn_count_recent.load(std::memory_order_relaxed);
+    uint64_t total_events_recent = b.hot_.total_events_recent.load(std::memory_order_relaxed);
+    uint64_t legitimate_acks = b.hot_.ack_count_recent.load(std::memory_order_relaxed);
     auto now = std::chrono::steady_clock::now();
     
-    // Reset rolling counters if they're stale (older than window)
-    auto last_update_ns = b.hot_.last_update_ns.load(); // FIXED: Use hot_ structure with nanoseconds
+    // Reset rolling counters if they're stale
+    auto last_update_ns = b.hot_.last_update_ns.load();
     auto last_update = detail::ns_to_time_point(last_update_ns);
     auto time_since_update = std::chrono::duration_cast<std::chrono::seconds>(now - last_update);
     if (time_since_update.count() > syn_window_seconds) {
-        // Counters are stale, fall back to event scanning for this check
+        // Counters are stale, fall back to event scanning
         syn_count_recent = 0;
         total_events_recent = 0;
         legitimate_acks = 0;
@@ -426,30 +469,37 @@ bool BehaviorTracker::detectSynFlood(const Behavior& b) const {
     }
     
     // 3. Enhanced SYN ratio analysis with legitimacy consideration
-    if (total_events_recent > 100) {  // Higher threshold for meaningful analysis
+    if (total_events_recent > 100) {
         double syn_ratio = static_cast<double>(syn_count_recent) / total_events_recent;
         double ack_ratio = static_cast<double>(legitimate_acks) / total_events_recent;
         
-        // Real attacks have high SYN:ACK ratio (few completing handshakes)
-        if (syn_ratio > 0.7 && ack_ratio < 0.2 && syn_count_recent > syn_count_threshold / 2) {
-            return true; // High SYN concentration with low completion rate
-        }
-    }
-    
-    // 4. Sustained attack detection with baseline comparison
-    if (syn_count_recent > syn_count_threshold) {
-        // Compare with baseline rate to avoid false positives during legitimate spikes
-        double current_rate = static_cast<double>(syn_count_recent) / syn_window_seconds;
-        if (current_rate > b.baseline_rate * 10.0) { // 10x baseline rate
+        // Adaptive SYN count threshold based on baseline
+        double adaptive_syn_count_threshold = adaptive_threshold * 0.5;
+        
+        if (syn_ratio > 0.7 && ack_ratio < 0.2 && syn_count_recent > adaptive_syn_count_threshold) {
             return true;
         }
     }
     
-    // 5. Packet timing analysis - real SYN floods often have uniform intervals
-    if (syn_count_recent > syn_count_threshold / 4 && !b.packet_intervals.empty()) {
+    // 4. Sustained attack detection with adaptive baseline comparison
+    double adaptive_count_threshold = adaptive_threshold * 2.0;
+    if (syn_count_recent > adaptive_count_threshold) {
+        double current_rate = static_cast<double>(syn_count_recent) / syn_window_seconds;
+        double baseline_rate = b.baseline_rate.load();
+        
+        // Use adaptive multiplier instead of fixed 10x
+        double rate_multiplier = std::max(5.0, g_threshold_tuning.syn_flood_baseline_multiplier);
+        if (current_rate > baseline_rate * rate_multiplier) {
+            return true;
+        }
+    }
+    
+    // 5. Packet timing analysis with adaptive variance threshold
+    if (syn_count_recent > adaptive_threshold * 0.25 && !b.packet_intervals.empty()) {
         double interval_variance = calculatePacketIntervalVariance(b.packet_intervals);
-        // Very low variance suggests automated flooding
-        if (interval_variance < 0.01 && syn_count_recent > 500) {
+        double adaptive_variance_threshold = 0.01 * legitimacy_multiplier;
+        
+        if (interval_variance < adaptive_variance_threshold && syn_count_recent > 500) {
             return true;
         }
     }
@@ -458,18 +508,26 @@ bool BehaviorTracker::detectSynFlood(const Behavior& b) const {
 }
 
 bool BehaviorTracker::detectAckFlood(const Behavior& b) const {
-    // Real-world ACK flood detection with improved accuracy
+    // NEW: Adaptive thresholds based on baseline and environmental factors
+    double adaptive_threshold = calculateAdaptiveAckFloodThreshold(b);
+    double time_factor = calculateTimeOfDayFactor();
+    double network_factor = calculateNetworkLoadFactor();
+    double legitimacy_multiplier = calculateLegitimacyMultiplier(b);
+    
+    // Apply environmental adjustments
+    adaptive_threshold *= time_factor * network_factor * legitimacy_multiplier;
+    
+    // Ensure minimum threshold for security
+    adaptive_threshold = std::max(adaptive_threshold, g_threshold_tuning.min_ack_flood_threshold);
+    
     #ifdef TESTING
         const int ack_window_seconds = 5;
-        const int ack_count_threshold = 100;  // Higher for realism
-        const int orphan_ack_threshold = 80;
+        adaptive_threshold = std::max(adaptive_threshold * 0.1, 50.0); // Lower for testing
     #else
         const int ack_window_seconds = 30;
-        const int ack_count_threshold = 1000;
-        const int orphan_ack_threshold = 800;
     #endif
     
-    // Enhanced ACK flood detection with pattern analysis
+    // Enhanced ACK flood detection with adaptive pattern analysis
     uint64_t orphan_ack_count = 0;
     uint64_t total_ack_count = 0;
     uint64_t syn_count = 0;
@@ -488,19 +546,23 @@ bool BehaviorTracker::detectAckFlood(const Behavior& b) const {
         }
     }
     
-    // 1. Direct orphan ACK detection
-    if (orphan_ack_count > orphan_ack_threshold) {
+    // 1. Direct orphan ACK detection with adaptive threshold
+    double adaptive_orphan_threshold = adaptive_threshold * 0.8;
+    if (orphan_ack_count > adaptive_orphan_threshold) {
         return true;
     }
     
-    // 2. ACK:SYN ratio analysis - legitimate traffic should have balanced SYN:ACK
+    // 2. ACK:SYN ratio analysis with adaptive thresholds
     if (syn_count > 0 && total_ack_count > 0) {
         double ack_syn_ratio = static_cast<double>(total_ack_count) / syn_count;
-        // Suspicious if way more ACKs than SYNs (normal should be ~1:1 or 2:1)
-        if (ack_syn_ratio > 5.0 && total_ack_count > ack_count_threshold / 2) {
+        double adaptive_count_threshold = adaptive_threshold * 0.5;
+        
+        // Adaptive ratio threshold based on legitimacy
+        double ratio_threshold = 5.0 / legitimacy_multiplier;
+        if (ack_syn_ratio > ratio_threshold && total_ack_count > adaptive_count_threshold) {
             return true;
         }
-    } else if (total_ack_count > ack_count_threshold && syn_count < 10) {
+    } else if (total_ack_count > adaptive_threshold && syn_count < 10) {
         // Many ACKs with very few SYNs is suspicious
         return true;
     }
@@ -509,20 +571,30 @@ bool BehaviorTracker::detectAckFlood(const Behavior& b) const {
 }
 
 bool BehaviorTracker::detectHttpFlood(const Behavior& b) const {
-    // Real-world HTTP flood detection with legitimate traffic consideration
+    // NEW: Adaptive thresholds based on baseline and environmental factors
+    double adaptive_threshold = calculateAdaptiveHttpFloodThreshold(b);
+    double time_factor = calculateTimeOfDayFactor();
+    double network_factor = calculateNetworkLoadFactor();
+    double legitimacy_multiplier = calculateLegitimacyMultiplier(b);
+    
+    // Apply environmental adjustments
+    adaptive_threshold *= time_factor * network_factor * legitimacy_multiplier;
+    
+    // Ensure minimum threshold for security
+    adaptive_threshold = std::max(adaptive_threshold, g_threshold_tuning.min_http_flood_threshold);
+    
     #ifdef TESTING
         const int http_window_seconds = 10;
-        const int http_count_threshold = 500;   // Higher for realism
-        const int burst_threshold = 200;
-        const int sustained_threshold = 400;
+        adaptive_threshold = std::max(adaptive_threshold * 0.05, 100.0); // Much lower for testing
     #else
         const int http_window_seconds = 120;
-        const int http_count_threshold = 10000;
-        const int burst_threshold = 2000;
-        const int sustained_threshold = 5000;
     #endif
     
-    // Multi-timeframe HTTP flood detection with real-world considerations
+    // Calculate adaptive sub-thresholds
+    double adaptive_burst_threshold = adaptive_threshold * 0.2;
+    double adaptive_sustained_threshold = adaptive_threshold * 0.5;
+    
+    // Multi-timeframe HTTP flood detection with adaptive considerations
     uint64_t http_count_recent = 0;
     uint64_t http_count_burst = 0;  // Last 30 seconds
     int unique_sessions_recent = 0;
@@ -544,51 +616,58 @@ bool BehaviorTracker::detectHttpFlood(const Behavior& b) const {
                     }
                 }
             }
-            if (duration.count() <= 30) { // 30-second burst window
+            if (duration.count() <= 30) // 30-second burst window
                 http_count_burst++;
-            }
         }
     }
     
     unique_sessions_recent = static_cast<int>(recent_sessions.size());
     
-    // 1. Burst detection - rapid HTTP requests in short time
-    if (http_count_burst > burst_threshold) {
-        // Additional check: if many requests from very few sessions, likely attack
-        if (unique_sessions_recent < 5 && http_count_burst > burst_threshold * 2) {
-            return true;
-        }
-        // If reasonable session diversity and high legitimacy score, might be flash crowd
-        if (unique_sessions_recent > 20 && b.hot_.legitimate_traffic_score.load() > 2.0) {  // FIXED: Use hot_ structure
+    // 1. Burst detection with adaptive threshold
+    if (http_count_burst > adaptive_burst_threshold) {
+        // Flash crowd vs attack distinction with adaptive thresholds
+        double session_diversity = static_cast<double>(unique_sessions_recent) / std::max(http_count_burst, static_cast<uint64_t>(1));
+        double legitimacy_score = b.hot_.legitimate_traffic_score.load();
+        
+        // More lenient for high legitimacy scores and good session diversity
+        if (unique_sessions_recent > 20 && legitimacy_score > 2.0 && session_diversity > 0.3) {
             return false; // Likely legitimate flash crowd
+        }
+        
+        // Stricter detection for suspicious patterns
+        if (unique_sessions_recent < 5 && http_count_burst > adaptive_burst_threshold * 2) {
+            return true;
         }
         return true;
     }
     
-    // 2. Sustained high-rate detection with session analysis
-    if (http_count_recent > sustained_threshold) {
-        // Check session diversity - legitimate traffic has more diverse sessions
+    // 2. Sustained high-rate detection with adaptive analysis
+    if (http_count_recent > adaptive_sustained_threshold) {
+        // Adaptive session diversity analysis
         double session_diversity = static_cast<double>(unique_sessions_recent) / std::max(http_count_recent, static_cast<uint64_t>(1));
+        double diversity_threshold = 0.1 * legitimacy_multiplier; // Higher legitimacy = higher tolerance
         
-        if (session_diversity < 0.1) { // Less than 10% session diversity
+        if (session_diversity < diversity_threshold) {
             return true; // Likely bot/flood traffic
         }
         
-        // Check against baseline rate
+        // Adaptive baseline comparison
         double current_rate = static_cast<double>(http_count_recent) / http_window_seconds;
-        if (current_rate > b.baseline_rate * 20.0) { // 20x baseline rate
+        double baseline_rate = b.baseline_rate.load();
+        double rate_multiplier = std::max(10.0, g_threshold_tuning.http_flood_baseline_multiplier);
+        
+        if (current_rate > baseline_rate * rate_multiplier) {
             return true;
         }
     }
     
-    // 3. Extreme volume detection
-    if (http_count_recent > http_count_threshold) {
+    // 3. Extreme volume detection with adaptive threshold
+    if (http_count_recent > adaptive_threshold) {
         return true;
     }
     
-    // 4. Enhanced pattern analysis - check for repetitive requests
+    // 4. Enhanced pattern analysis with adaptive suspicious ratio
     if (http_count_recent > 200) {
-        // Check for suspicious patterns in HTTP requests
         int suspicious_count = 0;
         for (const auto& event : b.recent_events) {
             if (event.event_type == "HTTP_SUSPICIOUS") {
@@ -597,12 +676,9 @@ bool BehaviorTracker::detectHttpFlood(const Behavior& b) const {
         }
         
         double suspicious_ratio = static_cast<double>(suspicious_count) / http_count_recent;
-        if (suspicious_ratio > 0.3) { // More than 30% suspicious requests
-            return true;
-        }
+        double suspicious_threshold = 0.3 / legitimacy_multiplier; // Adjust based on legitimacy
         
-        // Very few unique sessions for many requests
-        if (unique_sessions_recent < 10 && http_count_recent > 1000) {
+        if (suspicious_ratio > suspicious_threshold) {
             return true;
         }
     }
@@ -1130,377 +1206,445 @@ size_t BehaviorTracker::get_tracked_ips_count() const {
     return behaviors.size();
 }
 
-void BehaviorTracker::cleanup_expired_behaviors() {
-    std::lock_guard<std::mutex> lock(cleanup_mutex);
-    auto now = std::chrono::steady_clock::now();
-    
-    // Note: With LRU cache, old entries are automatically evicted
-    // This method can be used for additional cleanup logic if needed
-    last_cleanup = now;
-}
-
-void BehaviorTracker::force_cleanup_if_needed() {
-    // Implement aggressive cleanup when approaching memory limits
-    std::lock_guard<std::mutex> lock(cleanup_mutex);
-    
-    size_t current_size = behaviors.size();
-    size_t threshold = static_cast<size_t>(BehaviorConfig::MAX_TRACKED_IPS * 0.95); // 95% full
-    
-    if (current_size >= threshold) {
-        // Force eviction of old entries - LRU cache handles this automatically
-        // But we can also clean up based on activity level
-        std::vector<std::string> candidates_for_removal;
-        auto now = std::chrono::steady_clock::now();
-        
-        behaviors.for_each([&](const std::string& ip, const Behavior& b) {
-            auto time_since_seen = std::chrono::duration_cast<std::chrono::minutes>(now - b.last_seen);
-            // Remove IPs not seen for more than 10 minutes and with low activity
-            if (time_since_seen.count() > 10 && b.hot_.total_packets.load() < 100) {
-                candidates_for_removal.push_back(ip);
-            }
-        });
-        
-        // Remove candidates (this will be handled by the LRU eviction mechanism)
-        // The LRU cache will automatically handle cleanup
-        last_cleanup = now;
-    }
-}
-
-// Enhanced real-world analysis methods implementation
-
-// Legacy updateBaselineRate - removed, now using updateBaselineRateOptimized directly
-
-bool BehaviorTracker::isLegitimateTrafficPattern(const Behavior& b) const {
-    // Check various indicators of legitimate traffic
-    double legitimacy_score = b.hot_.legitimate_traffic_score.load();
-    
-    // 1. High legitimacy score from proper protocol behavior
-    if (legitimacy_score > 5.0) {
-        return true;
-    }
-    
-    // 2. Good ratio of complete TCP handshakes to SYNs
-    if (b.hot_.syn_count.load() > 10 && b.hot_.ack_count.load() > 0) {
-        double completion_ratio = static_cast<double>(b.hot_.ack_count.load()) / b.hot_.syn_count.load();
-        if (completion_ratio > 0.8) { // High completion rate
-            return true;
-        }
-    }
-    
-    // 3. Diverse session patterns
-    if (b.unique_session_count > 10 && b.hot_.total_packets.load() > 50) {
-        double session_diversity = static_cast<double>(b.unique_session_count) / b.hot_.total_packets.load();
-        if (session_diversity > 0.1) { // Good session diversity
-            return true;
-        }
-    }
-    
-    // 4. Reasonable packet timing variance (humans have irregular timing)
-    if (!b.packet_intervals.empty()) {
-        double variance = calculatePacketIntervalVariance(b.packet_intervals);
-        if (variance > 0.5) { // High variance suggests human behavior
-            return true;
-        }
-    }
-    
-    return false;
-}
-
-// FIXED: Consolidated variance calculation using template to avoid duplication
-namespace {
-    template<typename T>
-    double calculateVariance(const RingBuffer<T, BehaviorConfig::PACKET_HISTORY_SIZE>& values) {
-        if (values.size() < 2) return 0.0;
-        
-        double mean = 0.0;
-        for (const auto& value : values) {
-            mean += static_cast<double>(value);
-        }
-        mean /= static_cast<double>(values.size());
-        
-        double variance = 0.0;
-        for (const auto& value : values) {
-            double diff = static_cast<double>(value) - mean;
-            variance += diff * diff;
-        }
-        return variance / static_cast<double>(std::max(static_cast<size_t>(1), values.size())); // FIXED: Consistent types
-    }
-}
-
-double BehaviorTracker::calculatePacketIntervalVariance(const RingBuffer<double, BehaviorConfig::PACKET_HISTORY_SIZE>& intervals) const {
-    return calculateVariance(intervals);
-}
-
-double BehaviorTracker::calculateSizeVariance(const RingBuffer<size_t, BehaviorConfig::PACKET_HISTORY_SIZE>& sizes) const {
-    return calculateVariance(sizes);
-}
-
-bool BehaviorTracker::detectFlashCrowdPattern(const Behavior& b) const {
-    // Flash crowds have characteristics different from DDoS attacks:
-    // 1. Higher session diversity
-    // 2. More complete HTTP requests
-    // 3. Variable packet timing
-    // 4. Reasonable request completion rates
+// NEW: Behavioral metrics for adaptive thresholds
+double BehaviorTracker::getGlobalSynRate() const {
+    double total_syn_rate = 0.0;
+    size_t active_ips = 0;
     
     auto now = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - b.first_seen);
+    auto start_time = std::chrono::steady_clock::time_point(now - std::chrono::minutes(5)); // 5-minute window
     
-    if (duration.count() < 60) return false; // Need at least 1 minute of data
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        if (b.last_seen > start_time) {
+            total_syn_rate += static_cast<double>(b.hot_.syn_count_recent.load());
+            active_ips++;
+        }
+    });
     
-    // Check for sudden spike characteristics of flash crowds
-    if (b.hot_.total_packets.load() > 1000 && duration.count() < 300) { // High traffic in short time
-        // Check legitimacy indicators
-        bool high_diversity = b.unique_session_count > 50;
-        bool good_completion = (b.hot_.ack_count.load() > 0) && (static_cast<double>(b.hot_.ack_count.load()) / std::max(b.hot_.syn_count.load(), static_cast<uint64_t>(1)) > 0.5);
-        bool variable_timing = !b.packet_intervals.empty() && calculatePacketIntervalVariance(b.packet_intervals) > 0.3;
-        
-        // If 2 out of 3 legitimacy indicators are met, likely flash crowd
-        int legitimacy_indicators = (high_diversity ? 1 : 0) + (good_completion ? 1 : 0) + (variable_timing ? 1 : 0);
-        return legitimacy_indicators >= 2;
-    }
-    
-    return false;
+    return active_ips > 0 ? (total_syn_rate / 300.0) : 0.0; // Rate per second over 5 minutes
 }
 
-double BehaviorTracker::calculateLegitimacyFactor(const Behavior& b) const {
-    double factor = 1.0;
-    double legitimacy_score = b.hot_.legitimate_traffic_score.load();
+double BehaviorTracker::getGlobalAckRate() const {
+    double total_ack_rate = 0.0;
+    size_t active_ips = 0;
     
-    #ifdef TESTING
-        // In testing mode, apply more conservative legitimacy scoring
-        
-        // Base legitimacy score contribution (reduced effect)
-        factor += legitimacy_score * 0.05; // Reduced from 0.1
-        
-        // Session diversity bonus (reduced)
-        if (b.hot_.total_packets.load() > 0) {
-            double session_diversity = static_cast<double>(b.unique_session_count) / b.hot_.total_packets.load();
-            factor += session_diversity * 0.5; // Reduced from 2.0
-        }
-        
-        // Protocol completion bonus (reduced)
-        if (b.hot_.syn_count.load() > 0) {
-            double completion_rate = static_cast<double>(b.hot_.ack_count.load()) / b.hot_.syn_count.load();
-            factor += completion_rate * 0.3; // Reduced from 1.0
-        }
-        
-        // Timing variance bonus (reduced)
-        if (!b.packet_intervals.empty()) {
-            double variance = calculatePacketIntervalVariance(b.packet_intervals);
-            factor += std::min(variance * 0.2, 0.3); // Much reduced and capped
-        }
-        
-    #else
-        // Production legitimacy scoring (full effect for real-world use)
-        
-        // Base legitimacy score contribution
-        factor += legitimacy_score * 0.1;
-        
-        // Session diversity bonus
-        if (b.hot_.total_packets.load() > 0) {
-            double session_diversity = static_cast<double>(b.unique_session_count) / b.hot_.total_packets.load();
-            factor += session_diversity * 2.0;
-        }
-        
-        // Protocol completion bonus
-        if (b.hot_.syn_count.load() > 0) {
-            double completion_rate = static_cast<double>(b.hot_.ack_count.load()) / b.hot_.syn_count.load();
-            factor += completion_rate;
-        }
-        
-        // Timing variance bonus (human-like behavior)
-        if (!b.packet_intervals.empty()) {
-            double variance = calculatePacketIntervalVariance(b.packet_intervals);
-            factor += std::min(variance, 1.0); // Cap the bonus
-        }
-    #endif
+    auto now = std::chrono::steady_clock::now();
+    auto start_time = std::chrono::steady_clock::time_point(now - std::chrono::minutes(5)); // 5-minute window
     
-    return std::max(factor, 1.0); // Minimum factor of 1.0
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        if (b.last_seen > start_time) {
+            total_ack_rate += static_cast<double>(b.hot_.ack_count_recent.load());
+            active_ips++;
+        }
+    });
+    
+    return active_ips > 0 ? (total_ack_rate / 300.0) : 0.0; // Rate per second over 5 minutes
 }
 
-int BehaviorTracker::calculateAdaptiveThreshold(const Behavior& b, double legitimacy_factor) const {
-    #ifdef TESTING
-        int base_threshold = 3; // Lower base threshold for testing
-    #else
-        int base_threshold = 10; // Higher base threshold for production
-    #endif
+double BehaviorTracker::getGlobalHttpRate() const {
+    double total_http_rate = 0.0;
+    size_t active_ips = 0;
     
-    #ifdef TESTING
-        // In testing mode, apply minimal legitimacy adjustments
-        if (legitimacy_factor > 3.0) {
-            base_threshold += 2; // Modest increase for highly legitimate traffic
-        } else if (legitimacy_factor > 2.0) {
-            base_threshold += 1; // Small increase for somewhat legitimate traffic
-        }
-    #else
-        // Production legitimacy adjustments
-        if (legitimacy_factor > 3.0) {
-            base_threshold += 5; // Much higher threshold for highly legitimate traffic
-        } else if (legitimacy_factor > 2.0) {
-            base_threshold += 3; // Higher threshold for somewhat legitimate traffic
-        }
-    #endif
+    auto now = std::chrono::steady_clock::now();
+    auto start_time = std::chrono::steady_clock::time_point(now - std::chrono::minutes(5)); // 5-minute window
     
-    // Network load consideration (less aggressive in testing)
-    #ifdef TESTING
-        if (total_global_packets.load(std::memory_order_relaxed) > 50000) { // FIXED: Add explicit memory_order
-            base_threshold += 1; // Minimal increase during high load
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        if (b.last_seen > start_time) {
+            total_http_rate += static_cast<double>(b.hot_.http_count_recent.load());
+            active_ips++;
         }
-    #else
-        if (total_global_packets.load(std::memory_order_relaxed) > 100000) { // FIXED: Add explicit memory_order
-            base_threshold += 2; // Higher threshold during high network load
-        }
-    #endif
+    });
     
-    // Time-based adjustment (more lenient during business hours using wall clock)
-    if (isBusinessHours()) {
-        base_threshold += 1; // Slightly higher threshold during business hours
-    }
-    
-    return base_threshold;
+    return active_ips > 0 ? (total_http_rate / 300.0) : 0.0; // Rate per second over 5 minutes
 }
 
+double BehaviorTracker::getAverageBaselineSynRate() const {
+    double total_baseline = 0.0;
+    size_t count = 0;
+    
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        double baseline = b.baseline_rate.load();
+        if (baseline > 0.0) {
+            // Estimate SYN baseline as a fraction of total baseline rate
+            total_baseline += baseline * 0.1; // Assume ~10% of traffic is SYN packets
+            count++;
+        }
+    });
+    
+    return count > 0 ? (total_baseline / count) : 1.0; // Default 1 SYN/sec
+}
+
+double BehaviorTracker::getAverageBaselineAckRate() const {
+    double total_baseline = 0.0;
+    size_t count = 0;
+    
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        double baseline = b.baseline_rate.load();
+        if (baseline > 0.0) {
+            // Estimate ACK baseline as a fraction of total baseline rate
+            total_baseline += baseline * 0.15; // Assume ~15% of traffic is ACK packets
+            count++;
+        }
+    });
+    
+    return count > 0 ? (total_baseline / count) : 1.0; // Default 1 ACK/sec
+}
+
+double BehaviorTracker::getAverageBaselineHttpRate() const {
+    double total_baseline = 0.0;
+    size_t count = 0;
+    
+    behaviors.for_each([&](const std::string& ip, const Behavior& b) {
+        double baseline = b.baseline_rate.load();
+        if (baseline > 0.0) {
+            // Estimate HTTP baseline as a fraction of total baseline rate
+            total_baseline += baseline * 0.05; // Assume ~5% of traffic is HTTP
+            count++;
+        }
+    });
+    
+    return count > 0 ? (total_baseline / count) : 0.1; // Default 0.1 HTTP req/sec
+}
+
+// Pattern detection methods
 std::vector<std::string> BehaviorTracker::getLastDetectedPatterns() const {
     std::lock_guard<std::mutex> lock(patterns_mutex);
-    
-    // Return patterns without timestamp expiration for now to ensure consistency
-    // Patterns will be updated naturally when new detection cycles run
     return last_detected_patterns;
 }
 
 void BehaviorTracker::clearLastDetectedPatterns() {
     std::lock_guard<std::mutex> lock(patterns_mutex);
     last_detected_patterns.clear();
+    patterns_timestamp = std::chrono::steady_clock::now();
 }
 
-// ===============================================
-// Optimized Helper Methods for Hot-Path Performance
-// ===============================================
-
-void BehaviorTracker::updateRollingCounters(Behavior& b, const std::string& event_type, 
-                                           const std::chrono::steady_clock::time_point& now) {
-    // Update rolling counters to avoid multiple passes over recent_events
-    if (event_type == "SYN") {
-        b.hot_.syn_count_recent.fetch_add(1);  // FIXED: Use hot_ structure
-    } else if (event_type == "ACK" || event_type == "ORPHAN_ACK") {
-        b.hot_.ack_count_recent.fetch_add(1);  // FIXED: Use hot_ structure
-    } else if (event_type == "HTTP" || event_type == "HTTP_SUSPICIOUS") {
-        b.hot_.http_count_recent.fetch_add(1);  // FIXED: Use hot_ structure
+// Adaptive threshold calculation methods
+double BehaviorTracker::calculateAdaptiveSynFloodThreshold(const Behavior& b) const {
+    // Get baseline rate (use cached value if available)
+    double baseline = b.baseline_rate.load();
+    if (baseline <= 0.0) {
+        baseline = 1.0; // Default baseline
     }
-    b.hot_.total_events_recent.fetch_add(1);  // FIXED: Use hot_ structure
-    b.hot_.last_update_ns.store(detail::time_point_to_ns(now)); // FIXED: Use hot_ structure with nanoseconds
+    
+    // Start with a base multiplier applied to baseline
+    double threshold = baseline * g_threshold_tuning.syn_flood_baseline_multiplier;
+    
+    return std::max(threshold, g_threshold_tuning.min_syn_flood_threshold);
 }
 
-void BehaviorTracker::updateBaselineRateOptimized(Behavior& b, const std::chrono::steady_clock::time_point& now) {
-    auto time_since_first = std::chrono::duration_cast<std::chrono::seconds>(now - b.first_seen);
-    
-    // Initialize baseline with first 20 seconds of data, then refine after 5 minutes
-    if (time_since_first.count() >= 20 && b.baseline_rate.load() == 0.0) {
-        // Initial baseline from first 20 seconds
-        double initial_rate = static_cast<double>(b.hot_.total_packets.load()) / static_cast<double>(time_since_first.count());
-        b.baseline_rate.store(initial_rate);
-        b.cached_baseline_rate.store(initial_rate);
-        b.last_baseline_update_ns.store(detail::time_point_to_ns(now)); // FIXED: Use nanoseconds
-        return;
+double BehaviorTracker::calculateAdaptiveAckFloodThreshold(const Behavior& b) const {
+    // Get baseline rate (use cached value if available)
+    double baseline = b.baseline_rate.load();
+    if (baseline <= 0.0) {
+        baseline = 1.0; // Default baseline
     }
     
-    if (time_since_first.count() > 300) { // At least 5 minutes of observation for refinement
-        // Use cached rate to avoid frequent divisions
-        double cached_rate = b.cached_baseline_rate.load();
-        
-        // Only recalculate if enough time has passed
-        auto last_baseline_ns = b.last_baseline_update_ns.load();
-        auto last_baseline = detail::ns_to_time_point(last_baseline_ns); // FIXED: Convert from nanoseconds
-        auto time_since_update = std::chrono::duration_cast<std::chrono::seconds>(now - last_baseline);
-        
-        if (time_since_update.count() > 60 || cached_rate == 0.0) { // Update every minute
-            double current_rate = static_cast<double>(b.hot_.total_packets.load()) / static_cast<double>(time_since_first.count());
-            
-            // Use exponential moving average to update baseline
-            double old_baseline = b.baseline_rate.load();
-            double new_baseline;
-            if (old_baseline == 0.0) {
-                new_baseline = current_rate;
-            } else {
-                new_baseline = (1.0 - BehaviorConfig::BASELINE_UPDATE_ALPHA) * old_baseline + 
-                              BehaviorConfig::BASELINE_UPDATE_ALPHA * current_rate;
-            }
-            
-            b.baseline_rate.store(new_baseline);
-            b.cached_baseline_rate.store(new_baseline);
-            b.last_baseline_update_ns.store(detail::time_point_to_ns(now)); // FIXED: Use nanoseconds
-        }
+    // Start with a base multiplier applied to baseline
+    double threshold = baseline * g_threshold_tuning.ack_flood_baseline_multiplier;
+    
+    return std::max(threshold, g_threshold_tuning.min_ack_flood_threshold);
+}
+
+double BehaviorTracker::calculateAdaptiveHttpFloodThreshold(const Behavior& b) const {
+    // Get baseline rate (use cached value if available)
+    double baseline = b.baseline_rate.load();
+    if (baseline <= 0.0) {
+        baseline = 0.1; // Default baseline for HTTP
+    }
+    
+    // Start with a base multiplier applied to baseline
+    double threshold = baseline * g_threshold_tuning.http_flood_baseline_multiplier;
+    
+    return std::max(threshold, g_threshold_tuning.min_http_flood_threshold);
+}
+
+double BehaviorTracker::calculateTimeOfDayFactor() const {
+    if (!g_threshold_tuning.enable_time_of_day_adaptation) {
+        return 1.0;
+    }
+    
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto* tm = std::localtime(&time_t);
+    
+    int hour = tm->tm_hour;
+    
+    // Business hours (9 AM - 5 PM): Lower thresholds (more sensitive)
+    // Night hours: Higher thresholds (less sensitive)
+    if (hour >= 9 && hour <= 17) {
+        return 0.8; // More sensitive during business hours
+    } else if (hour >= 22 || hour <= 6) {
+        return 1.5; // Less sensitive during night hours
+    } else {
+        return 1.0; // Normal sensitivity
     }
 }
 
-bool BehaviorTracker::shouldRunDistributedCheck() const {
-    auto now = std::chrono::steady_clock::now();
-    auto last_check_ns = last_distributed_check_ns.load(); // FIXED: Use nanoseconds
-    auto last_check = detail::ns_to_time_point(last_check_ns); // FIXED: Convert from nanoseconds
-    auto time_since_check = std::chrono::duration_cast<std::chrono::seconds>(now - last_check);
-    
-    if (time_since_check >= BehaviorConfig::DISTRIBUTED_ATTACK_CHECK_INTERVAL) {
-        // Use compare_exchange_strong to ensure only one thread updates
-        auto expected_ns = last_check_ns; // FIXED: Use nanoseconds for compare_exchange
-        auto* mutable_this = const_cast<BehaviorTracker*>(this);
-        if (mutable_this->last_distributed_check_ns.compare_exchange_strong(expected_ns, detail::time_point_to_ns(now))) {
-            return true; // Successfully updated, this thread should run the check
-        }
+double BehaviorTracker::calculateNetworkLoadFactor() const {
+    if (!g_threshold_tuning.enable_network_load_adaptation) {
+        return 1.0;
     }
-    return false;
+    
+    // Calculate network load based on total active connections
+    size_t total_connections = active_connections.load();
+    size_t active_ips = behaviors.size();
+    
+    if (active_ips == 0) {
+        return 1.0;
+    }
+    
+    double avg_connections_per_ip = static_cast<double>(total_connections) / active_ips;
+    
+    // High network load: Lower thresholds (more sensitive to anomalies)
+    // Low network load: Higher thresholds (less sensitive)
+    if (avg_connections_per_ip > 50) {
+        return 0.7; // High load - more sensitive
+    } else if (avg_connections_per_ip > 20) {
+        return 0.9; // Medium load
+    } else {
+        return 1.2; // Low load - less sensitive
+    }
 }
 
-void BehaviorTracker::enforceBehaviorBounds(Behavior& b) {
-    // Enforce bounds on unbounded containers to prevent memory exhaustion
+double BehaviorTracker::calculateLegitimacyMultiplier(const Behavior& b) const {
+    double legitimacy_score = b.hot_.legitimate_traffic_score.load();
     
-    // Limit seen_sessions
-    if (b.seen_sessions.size() > BehaviorConfig::MAX_SEEN_SESSIONS) {
-        auto it = b.seen_sessions.begin();
-        std::advance(it, b.seen_sessions.size() - BehaviorConfig::MAX_SEEN_SESSIONS);
-        b.seen_sessions.erase(b.seen_sessions.begin(), it);
-    }
-    
-    // Limit established_connections
-    if (b.established_connections.size() > BehaviorConfig::MAX_ESTABLISHED_CONNECTIONS) {
-        auto it = b.established_connections.begin();
-        std::advance(it, b.established_connections.size() - BehaviorConfig::MAX_ESTABLISHED_CONNECTIONS);
-        b.established_connections.erase(b.established_connections.begin(), it);
-    }
-    
-    // Limit incomplete_requests
-    if (b.incomplete_requests.size() > BehaviorConfig::MAX_INCOMPLETE_REQUESTS) {
-        auto it = b.incomplete_requests.begin();
-        std::advance(it, b.incomplete_requests.size() - BehaviorConfig::MAX_INCOMPLETE_REQUESTS);
-        b.incomplete_requests.erase(b.incomplete_requests.begin(), it);
-    }
-    
-    // Limit recent_events (already handled with hard cap during insertion)
-    if (b.recent_events.size() > BehaviorConfig::MAX_RECENT_EVENTS) {
-        while (b.recent_events.size() > BehaviorConfig::MAX_RECENT_EVENTS) {
-            b.recent_events.pop_front();
-        }
+    // High legitimacy score: Increase thresholds (less sensitive)
+    // Low legitimacy score: Decrease thresholds (more sensitive)
+    if (legitimacy_score > g_threshold_tuning.legitimacy_factor_threshold) {
+        return 1.5; // Less sensitive for legitimate traffic
+    } else if (legitimacy_score < 0.5) {
+        return 0.6; // More sensitive for suspicious traffic
+    } else {
+        return 1.0; // Normal sensitivity
     }
 }
 
 bool BehaviorTracker::isBusinessHours() const {
-    // Thread-safe business hours detection using system_clock and localtime_r
-    auto now_time_t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    struct tm local_time_buf;
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto* tm = std::localtime(&time_t);
     
-#ifdef _WIN32
-    // Windows thread-safe localtime
-    if (localtime_s(&local_time_buf, &now_time_t) != 0) {
-        return false; // Default to non-business hours on error
-    }
-    struct tm* local_time = &local_time_buf;
-#else
-    // POSIX thread-safe localtime_r
-    struct tm* local_time = localtime_r(&now_time_t, &local_time_buf);
-    if (!local_time) {
-        return false; // Default to non-business hours on error
-    }
-#endif
+    int hour = tm->tm_hour;
+    int weekday = tm->tm_wday; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
     
-    // Business hours: 8 AM to 6 PM local time
-    return local_time->tm_hour >= 8 && local_time->tm_hour <= 18;
+    // Business hours: Monday-Friday, 9 AM - 5 PM
+    return (weekday >= 1 && weekday <= 5) && (hour >= 9 && hour <= 17);
+}
+
+// Additional missing methods
+void BehaviorTracker::updateBaselineRateOptimized(Behavior& b, const std::chrono::steady_clock::time_point& now) {
+    // Convert to nanoseconds for atomic operations
+    uint64_t now_ns = detail::time_point_to_ns(now);
+    uint64_t last_update_ns = b.last_baseline_update_ns.load();
+    
+    // Update baseline every 60 seconds
+    if (now_ns - last_update_ns > 60'000'000'000ULL) {
+        std::lock_guard<std::mutex> lock(b.baseline_mutex);
+        
+        // Calculate current rate based on recent activity
+        double time_window_seconds = 60.0; // 1 minute window
+        double current_rate = static_cast<double>(b.hot_.total_events_recent.load()) / time_window_seconds;
+        
+        // Update baseline using EWMA
+        double old_baseline = b.baseline_rate.load();
+        double new_baseline = 0.1 * current_rate + 0.9 * old_baseline; // 10% adaptation rate
+        
+        b.baseline_rate.store(new_baseline);
+        b.cached_baseline_rate.store(new_baseline);
+        b.last_baseline_update_ns.store(now_ns);
+    }
+}
+
+void BehaviorTracker::updateRollingCounters(Behavior& b, const std::string& event_type, 
+                                          const std::chrono::steady_clock::time_point& now) {
+    // Increment the appropriate recent counter
+    if (event_type == "SYN") {
+        b.hot_.syn_count_recent.fetch_add(1);
+    } else if (event_type == "ACK") {
+        b.hot_.ack_count_recent.fetch_add(1);
+    } else if (event_type == "HTTP") {
+        b.hot_.http_count_recent.fetch_add(1);
+    }
+    
+    b.hot_.total_events_recent.fetch_add(1);
+    b.hot_.last_update_ns.store(detail::time_point_to_ns(now));
+}
+
+void BehaviorTracker::enforceBehaviorBounds(Behavior& b) {
+    // Enforce maximum limits to prevent memory exhaustion
+    constexpr size_t MAX_HTTP_SESSIONS = 1000;
+    constexpr size_t MAX_INCOMPLETE_REQUESTS = 500;
+    constexpr size_t MAX_ESTABLISHED_CONNECTIONS = 2000;
+    
+    // Clean up HTTP sessions if too many
+    if (b.http_sessions.size() > MAX_HTTP_SESSIONS) {
+        // Remove oldest sessions
+        auto cutoff = std::chrono::steady_clock::now() - std::chrono::minutes(10);
+        for (auto it = b.http_sessions.begin(); it != b.http_sessions.end();) {
+            if (it->second < cutoff) {
+                it = b.http_sessions.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    
+    // Limit incomplete requests
+    if (b.incomplete_requests.size() > MAX_INCOMPLETE_REQUESTS) {
+        b.incomplete_requests.clear(); // Simple cleanup
+    }
+    
+    // Limit established connections
+    if (b.established_connections.size() > MAX_ESTABLISHED_CONNECTIONS) {
+        b.established_connections.clear(); // Simple cleanup
+    }
+}
+
+double BehaviorTracker::calculateLegitimacyFactor(const Behavior& b) const {
+    double score = 0.0;
+    
+    // Factor in connection diversity
+    size_t unique_sessions = b.seen_sessions.size();
+    size_t total_packets = b.hot_.total_packets.load();
+    
+    if (total_packets > 0) {
+        double session_diversity = static_cast<double>(unique_sessions) / total_packets;
+        score += session_diversity * 0.3; // Weight session diversity
+    }
+    
+    // Factor in packet size consistency
+    if (b.packet_intervals.size() > 10) {
+        double variance = calculatePacketIntervalVariance(b.packet_intervals);
+        if (variance < 0.5) { // Low variance indicates legitimate traffic
+            score += 0.3;
+        }
+    }
+    
+    // Factor in established vs half-open connections
+    int half_open = b.hot_.half_open.load();
+    size_t established = b.established_connections.size();
+    
+    if (established > 0) {
+        double connection_ratio = static_cast<double>(established) / (established + half_open);
+        score += connection_ratio * 0.4; // Weight connection completion
+    }
+    
+    return std::min(score, 1.0); // Cap at 1.0
+}
+
+int BehaviorTracker::calculateAdaptiveThreshold(const Behavior& b, double legitimacy_factor) const {
+    // Base threshold
+    int base_threshold = 100;
+    
+    // Adjust based on legitimacy
+    double multiplier = 1.0;
+    if (legitimacy_factor > 0.7) {
+        multiplier = 1.5; // Higher threshold for legitimate traffic
+    } else if (legitimacy_factor < 0.3) {
+        multiplier = 0.6; // Lower threshold for suspicious traffic
+    }
+    
+    // Apply time-of-day factor
+    double time_factor = calculateTimeOfDayFactor();
+    multiplier *= time_factor;
+    
+    return static_cast<int>(base_threshold * multiplier);
+}
+
+bool BehaviorTracker::shouldRunDistributedCheck() const {
+    auto now = std::chrono::steady_clock::now();
+    uint64_t now_ns = detail::time_point_to_ns(now);
+    uint64_t last_check_ns = last_distributed_check_ns.load();
+    
+    // Run distributed check every 30 seconds
+    return (now_ns - last_check_ns) > 30'000'000'000ULL;
+}
+
+bool BehaviorTracker::isLegitimateTrafficPattern(const Behavior& b) const {
+    // Check for patterns that indicate legitimate traffic
+    double legitimacy_score = b.hot_.legitimate_traffic_score.load();
+    
+    // High legitimacy score
+    if (legitimacy_score > 2.0) {
+        return true;
+    }
+    
+    // Check for normal connection patterns
+    size_t established = b.established_connections.size();
+    int half_open = b.hot_.half_open.load();
+    
+    if (established > 0 && half_open < static_cast<int>(established) / 2) {
+        return true; // More established than half-open connections
+    }
+    
+    // Check for reasonable session diversity
+    size_t sessions = b.seen_sessions.size();
+    uint64_t total_packets = b.hot_.total_packets.load();
+    
+    return (total_packets > 100 && sessions > total_packets / 10);
+}
+
+bool BehaviorTracker::detectFlashCrowdPattern(const Behavior& b) const {
+    // Flash crowds have high volume but legitimate patterns
+    uint64_t total_packets = b.hot_.total_packets.load();
+    
+    if (total_packets < 1000) {
+        return false; // Not high volume enough
+    }
+    
+    // Check for legitimate characteristics
+    double legitimacy_score = b.hot_.legitimate_traffic_score.load();
+    size_t unique_sessions = b.seen_sessions.size();
+    
+    // Flash crowd: high volume + high legitimacy + session diversity
+    return (legitimacy_score > 1.5 && unique_sessions > total_packets / 20);
+}
+
+double BehaviorTracker::calculatePacketIntervalVariance(const RingBuffer<double, BehaviorConfig::PACKET_HISTORY_SIZE>& intervals) const {
+    if (intervals.size() < 2) {
+        return 0.0;
+    }
+    
+    // Calculate mean
+    double sum = 0.0;
+    size_t count = 0;
+    for (size_t i = 0; i < intervals.size(); ++i) {
+        sum += intervals[i];
+        count++;
+    }
+    double mean = sum / count;
+    
+    // Calculate variance
+    double variance_sum = 0.0;
+    for (size_t i = 0; i < intervals.size(); ++i) {
+        double diff = intervals[i] - mean;
+        variance_sum += diff * diff;
+    }
+    
+    return variance_sum / count;
+}
+
+double BehaviorTracker::calculateSizeVariance(const RingBuffer<size_t, BehaviorConfig::PACKET_HISTORY_SIZE>& sizes) const {
+    if (sizes.size() < 2) {
+        return 0.0;
+    }
+    
+    // Calculate mean
+    double sum = 0.0;
+    size_t count = 0;
+    for (size_t i = 0; i < sizes.size(); ++i) {
+        sum += static_cast<double>(sizes[i]);
+        count++;
+    }
+    double mean = sum / count;
+    
+    // Calculate variance
+    double variance_sum = 0.0;
+    for (size_t i = 0; i < sizes.size(); ++i) {
+        double diff = static_cast<double>(sizes[i]) - mean;
+        variance_sum += diff * diff;
+    }
+    
+    return variance_sum / count;
 }

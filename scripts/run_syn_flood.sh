@@ -3,10 +3,10 @@
 # Enhanced SYN Flood Attack Script
 # Now generates attacks intense enough to trigger the harder detection thresholds
 
-TARGET_IP=${1:-"127.0.0.1"}
+TARGET_IP=${1:-"192.168.170.130"}
 TARGET_PORT=${2:-"80"}
 DURATION=${3:-"30"}
-INTENSITY=${4:-"high"}
+INTENSITY=${4:-"extreme"}
 
 # Colors for better output
 RED='\033[0;31m'

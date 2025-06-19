@@ -15,6 +15,7 @@ namespace {
     // Anomaly scoring thresholds
     constexpr double kEntropyDeviationThreshold = 0.8;
     constexpr double kRateDeviationThreshold = 3.0;
+    constexpr double kRateDeviationThresholdUdp = 6.0;  // NEW: Higher threshold for UDP
     constexpr double kHighRateDeviationThreshold = 5.0;
     constexpr double kVolumeRatioThreshold = 50.0;
     constexpr double kSignificantVolumeRatio = 200.0;
@@ -80,11 +81,41 @@ StatsEngine::StatsEngine(double entropy_threshold, double ewma_alpha, bool enabl
     start_time = std::chrono::steady_clock::now();
     last_cleanup = std::chrono::steady_clock::now();
     
+    // Initialize multicast/broadcast whitelist for noise reduction
+    initialize_multicast_whitelist();
+    
     // Remove unused legitimate_traffic_patterns map
     // All pattern checking now happens in is_legitimate_traffic_pattern()
 }
 
 bool StatsEngine::analyze(const PacketData& pkt) {
+    // NEW: Skip anomaly detection during learning period
+    if (!initial_learning_done) {
+        // Check if learning period is complete
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(now - start_time);
+        
+        std::shared_lock<std::shared_mutex> read_lock(stats_mutex);
+        bool time_complete = elapsed_time.count() >= LEARNING_TIME_SECONDS;
+        bool packet_complete = packets_received >= LEARNING_PACKET_THRESHOLD;
+        read_lock.unlock();
+        
+        if (time_complete || packet_complete) {
+            std::unique_lock<std::shared_mutex> write_lock(stats_mutex);
+            initial_learning_done = true;
+            write_lock.unlock();
+        } else {
+            // Still in learning mode - update stats but don't flag anomalies
+            update_stats_learning_mode(pkt);
+            return false;
+        }
+    }
+    
+    // NEW: Skip detection for multicast/broadcast traffic to well-known addresses
+    if ((pkt.is_multicast || pkt.is_broadcast) && 
+        multicast_whitelist.count(pkt.dst_ip) > 0) {
+        return false;
+    }
     // Step 1: Quick read of current stats with shared lock
     double local_current_rate, local_baseline_rate, local_current_entropy;
     double rate_deviation;
@@ -102,7 +133,8 @@ bool StatsEngine::analyze(const PacketData& pkt) {
         double time_seconds = std::max(static_cast<double>(duration) / 1000.0, 0.001);
         double instant_rate = static_cast<double>(pkt.size) / time_seconds;
         
-        rate_deviation = calculate_rate_deviation(pkt.src_ip, instant_rate);
+        rate_deviation = calculate_destination_rate_deviation(pkt.src_ip, pkt.dst_ip, 
+                                                            pkt.dst_port, instant_rate);
     }
     
     // Step 2: Heavy computation WITHOUT locks (entropy, payload analysis)
@@ -129,8 +161,9 @@ bool StatsEngine::analyze(const PacketData& pkt) {
         }
     }
     
-    // 2. Adaptive rate-based detection with time-series analysis
-    if (rate_deviation > kRateDeviationThreshold) {  // 3 standard deviations from normal
+    // 2. Protocol-aware rate-based detection with time-series analysis
+    double protocol_rate_threshold = get_protocol_specific_rate_threshold(pkt);
+    if (rate_deviation > protocol_rate_threshold) {
         double rate_score = std::min(kRateAnomalyMaxWeight, rate_deviation / 10.0);
         anomaly_score += rate_score;
         
@@ -211,6 +244,9 @@ bool StatsEngine::analyze(const PacketData& pkt) {
         
         // FIXED: Update EWMA AFTER calculating deviation
         update_ewma(pkt.src_ip, current_rate);
+        
+        // NEW: Update per-destination statistics for more granular tracking
+        update_destination_statistics(pkt.src_ip, pkt.dst_ip, pkt.dst_port, instant_rate);
     }
     
     // FIXED: Now functional dynamic threshold system
@@ -362,6 +398,11 @@ double StatsEngine::get_entropy() const {
 // Real-world detection methods for production environments
 
 bool StatsEngine::is_legitimate_traffic_pattern(const PacketData& pkt) {
+    // NEW: Treat multicast/broadcast as legitimate service traffic
+    if (pkt.is_multicast || pkt.is_broadcast) {
+        return true;
+    }
+    
     // Check against known legitimate traffic patterns based on available packet data
     
     // HTTP/HTTPS traffic identification
@@ -374,6 +415,11 @@ bool StatsEngine::is_legitimate_traffic_pattern(const PacketData& pkt) {
     
     // Small control packets are typically legitimate
     if (pkt.size < 100 && (pkt.is_syn || pkt.is_ack)) {
+        return true;
+    }
+    
+    // NEW: Well-known service ports are typically legitimate
+    if (is_well_known_service_port(pkt.dst_port, pkt.is_udp())) {
         return true;
     }
     
@@ -729,4 +775,176 @@ void StatsEngine::update_feedback(double fp_rate, double accuracy) {
 double StatsEngine::calculate_zscore(double value, double mean, double stddev) {
     if (stddev == 0.0) return 0.0;
     return std::abs(value - mean) / stddev;
+}
+
+// NEW: Learning period management methods
+bool StatsEngine::is_learning_complete() const {
+    std::shared_lock<std::shared_mutex> read_lock(stats_mutex);
+    return initial_learning_done;
+}
+
+void StatsEngine::force_complete_learning() {
+    std::unique_lock<std::shared_mutex> write_lock(stats_mutex);
+    initial_learning_done = true;
+}
+
+void StatsEngine::update_stats_learning_mode(const PacketData& pkt) {
+    std::unique_lock<std::shared_mutex> write_lock(stats_mutex);
+    
+    packets_received++;
+    total_bytes += pkt.size;
+    
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_packet_time).count();
+    double time_seconds = std::max(static_cast<double>(duration) / 1000.0, 0.001);
+    double instant_rate = static_cast<double>(pkt.size) / time_seconds;
+    
+    // Update baseline during learning
+    if (packets_received == 1) {
+        current_rate = instant_rate;
+        baseline_rate = instant_rate;
+    } else {
+        current_rate = ewma_alpha * instant_rate + (1.0 - ewma_alpha) * current_rate;
+        update_baseline_window(instant_rate);
+        baseline_rate = calculate_95th_percentile_baseline();
+    }
+    
+    last_packet_time = now;
+    current_entropy = compute_entropy_optimized(pkt.getPayload());
+    
+    // Update basic IP stats
+    update_ewma(pkt.src_ip, current_rate);
+    update_destination_statistics(pkt.src_ip, pkt.dst_ip, pkt.dst_port, instant_rate);
+}
+
+// NEW: Per-destination tracking methods
+std::string StatsEngine::make_destination_key(const std::string& src_ip, const std::string& dst_ip, 
+                                            uint16_t dst_port) const {
+    return src_ip + ":" + dst_ip + ":" + std::to_string(dst_port);
+}
+
+void StatsEngine::update_destination_statistics(const std::string& src_ip, const std::string& dst_ip, 
+                                               uint16_t dst_port, double rate) {
+    auto dest_key = make_destination_key(src_ip, dst_ip, dst_port);
+    auto& dest_stats = destination_stats[dest_key];
+    auto now = std::chrono::steady_clock::now();
+    
+    if (dest_stats.packet_count == 0) {
+        dest_stats.first_seen = now;
+    }
+    
+    dest_stats.last_seen = now;
+    dest_stats.packet_count++;
+    dest_stats.ewma = dest_stats.ewma * (1 - ewma_alpha) + rate * ewma_alpha;
+    
+    // Update rate history for statistical analysis
+    dest_stats.rate_history.push_back(rate);
+    if (dest_stats.rate_history.size() > 50) { // Smaller window for destinations
+        dest_stats.rate_history.pop_front();
+    }
+    
+    // Update statistical measures
+    if (dest_stats.rate_history.size() >= 5) {
+        double sum = 0.0;
+        for (double r : dest_stats.rate_history) {
+            sum += r;
+        }
+        dest_stats.mean_rate = sum / static_cast<double>(dest_stats.rate_history.size());
+        
+        // Calculate standard deviation
+        double variance = 0.0;
+        for (double r : dest_stats.rate_history) {
+            variance += (r - dest_stats.mean_rate) * (r - dest_stats.mean_rate);
+        }
+        dest_stats.stddev_rate = std::sqrt(variance / static_cast<double>(dest_stats.rate_history.size()));
+    }
+}
+
+double StatsEngine::calculate_destination_rate_deviation(const std::string& src_ip, const std::string& dst_ip,
+                                                        uint16_t dst_port, double current_rate) {
+    std::shared_lock<std::shared_mutex> read_lock(stats_mutex);
+    
+    auto dest_key = make_destination_key(src_ip, dst_ip, dst_port);
+    auto it = destination_stats.find(dest_key);
+    
+    if (it == destination_stats.end() || it->second.rate_history.size() < 5) {
+        // Fall back to per-IP deviation for new destinations
+        return calculate_rate_deviation(src_ip, current_rate);
+    }
+    
+    const auto& dest_stats = it->second;
+    return calculate_zscore(current_rate, dest_stats.mean_rate, dest_stats.stddev_rate);
+}
+
+// NEW: Protocol-aware detection methods
+double StatsEngine::get_protocol_specific_rate_threshold(const PacketData& pkt) const {
+    // Different thresholds for UDP vs TCP due to different traffic patterns
+    if (pkt.is_udp()) {
+        // Higher threshold for UDP due to more bursty nature
+        return kRateDeviationThresholdUdp; // 6.0
+    } else if (pkt.is_tcp()) {
+        // Lower threshold for TCP 
+        return kRateDeviationThreshold; // 3.0
+    }
+    
+    // Default threshold for other protocols
+    return kRateDeviationThreshold;
+}
+
+bool StatsEngine::is_well_known_service_port(uint16_t port, bool is_udp) const {
+    if (is_udp) {
+        // Common UDP service ports that should be treated as legitimate
+        switch (port) {
+            case 53:   // DNS
+            case 67:   // DHCP server
+            case 68:   // DHCP client  
+            case 123:  // NTP
+            case 161:  // SNMP
+            case 162:  // SNMP trap
+            case 1900: // SSDP
+            case 5353: // mDNS
+                return true;
+            default:
+                // Multicast/broadcast ports
+                if (port >= 5350 && port <= 5365) return true; // mDNS range
+                break;
+        }
+    } else {
+        // Common TCP service ports
+        switch (port) {
+            case 21:   // FTP
+            case 22:   // SSH
+            case 23:   // Telnet
+            case 25:   // SMTP
+            case 53:   // DNS
+            case 80:   // HTTP
+            case 110:  // POP3
+            case 143:  // IMAP
+            case 443:  // HTTPS
+            case 993:  // IMAPS
+            case 995:  // POP3S
+                return true;
+        }
+    }
+    
+    return false;
+}
+
+void StatsEngine::initialize_multicast_whitelist() {
+    // IPv4 multicast addresses
+    multicast_whitelist.insert("224.0.0.251");     // mDNS
+    multicast_whitelist.insert("239.255.255.250"); // SSDP
+    multicast_whitelist.insert("224.0.0.1");       // All hosts multicast
+    multicast_whitelist.insert("224.0.0.2");       // All routers multicast
+    multicast_whitelist.insert("224.0.0.22");      // IGMP
+    
+    // IPv6 multicast addresses  
+    multicast_whitelist.insert("ff02::1");         // All nodes
+    multicast_whitelist.insert("ff02::2");         // All routers
+    multicast_whitelist.insert("ff02::fb");        // mDNS
+    multicast_whitelist.insert("ff02::c");         // SSDP
+    multicast_whitelist.insert("ff05::c");         // SSDP site-local
+    
+    // Common broadcast addresses
+    multicast_whitelist.insert("255.255.255.255"); // Limited broadcast
 }

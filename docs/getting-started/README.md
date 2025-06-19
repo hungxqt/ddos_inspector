@@ -85,7 +85,7 @@ sudo snort -c /etc/snort/snort_ddos_config.lua -T
 # Expected: "Snort successfully validated the configuration"
 
 # 4. Monitor live metrics
-cat /var/log/ddos_inspector/ddos_inspector_stats
+cat /var/log/ddos_inspector/metrics.log
 # Expected: Real-time statistics output
 ```
 
@@ -97,7 +97,7 @@ sudo ./scripts/run_syn_flood.sh --target 127.0.0.1 --port 80 --duration 10
 
 # Check for detection (wait 10-15 seconds)
 grep "SYN_FLOOD" /var/log/snort/alert
-grep "attacks_detected" /var/log/ddos_inspector/ddos_inspector_stats
+grep "attacks_detected" /var/log/ddos_inspector/metrics.log
 
 # Success indicators:
 # - Alert logged in /var/log/snort/alert
@@ -207,7 +207,7 @@ docker exec -it ddos-inspector bash
 snort --show-plugins | grep ddos_inspector
 
 # Check metrics from host
-cat /var/log/ddos_inspector/ddos_inspector_stats
+cat /var/log/ddos_inspector/metrics.log
 ```
 
 ### Access Monitoring Dashboards
@@ -239,7 +239,7 @@ docker exec ddos-inspector ./scripts/run_syn_flood.sh --target host.docker.inter
 docker exec ddos-inspector ./scripts/run_slowloris.sh --target host.docker.internal --duration 10
 
 # Check detection results
-docker exec ddos-inspector cat /var/log/ddos_inspector/ddos_inspector_stats
+docker exec ddos-inspector cat /var/log/ddos_inspector/metrics.log
 ```
 
 **Next Step**: [Configure your deployment](../configuration/) or [set up advanced monitoring](../monitoring/).

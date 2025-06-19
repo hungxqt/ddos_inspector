@@ -12,7 +12,7 @@ ddos_inspector = {
     entropy_threshold = 2.0,
     ewma_alpha = 0.1,
     block_timeout = 600,
-    metrics_file = "/var/log/ddos_inspector/ddos_inspector_stats.log",
+    metrics_file = "/var/log/ddos_inspector/metrics.log",
     blocked_ips_file = "/var/log/ddos_inspector/blocked_ips.log",
     rate_limited_ips_file = "/var/log/ddos_inspector/rate_limited_ips.log",
     -- Enhanced configuration options

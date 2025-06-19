@@ -335,7 +335,7 @@ sudo snort --show-plugins | grep ddos_inspector
 ./scripts/run_syn_flood.sh --target 127.0.0.1 --duration 30
 
 # 6. Monitor results
-watch -n 1 \'cat /var/log/ddos_inspector/ddos_inspector_stats\'
+watch -n 1 \'cat /var/log/ddos_inspector/metrics.log\'
 sudo nft list set inet filter ddos_ip_set
 ```
 
@@ -387,7 +387,7 @@ docker logs -f ddos_inspector
 
 ```bash
 # Live statistics
-watch -n 1 'cat /var/log/ddos_inspector/ddos_inspector_stats'
+watch -n 1 'cat /var/log/ddos_inspector/metrics.log'
 
 # Service status
 sudo systemctl status snort-ddos-inspector

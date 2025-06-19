@@ -224,7 +224,7 @@ EXPOSE 9091 9092 8080
 # Healthcheck to ensure Snort and plugin are operational
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD snort --version && \
-        [ -f /var/log/ddos_inspector/ddos_inspector_stats ] && \
+        [ -f /var/log/ddos_inspector/metrics.log ] && \
         snort --show-plugins | grep -q ddos_inspector && \
         [ -f /usr/local/lib/snort3_extra_plugins/ddos_inspector.so ] || exit 1
 

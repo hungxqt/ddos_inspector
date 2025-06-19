@@ -414,10 +414,17 @@ public:
     [[nodiscard]] bool detectLowAndSlowAttack(const Behavior& b) const;
     [[nodiscard]] bool detectRandomizedPayloads(const Behavior& b) const;
     [[nodiscard]] bool detectLegitimateTrafficMixing(const Behavior& b) const;
-    [[nodiscard]] bool detectDynamicSourceRotation() const;
-      // Helper calculation methods
+    [[nodiscard]] bool detectDynamicSourceRotation() const;    // Helper calculation methods
     [[nodiscard]] double calculatePacketIntervalVariance(const RingBuffer<double, BehaviorConfig::PACKET_HISTORY_SIZE>& intervals) const;
     [[nodiscard]] double calculateSizeVariance(const RingBuffer<size_t, BehaviorConfig::PACKET_HISTORY_SIZE>& sizes) const;
+    
+    // NEW: Adaptive threshold methods
+    [[nodiscard]] double calculateAdaptiveSynFloodThreshold(const Behavior& b) const;
+    [[nodiscard]] double calculateAdaptiveAckFloodThreshold(const Behavior& b) const;
+    [[nodiscard]] double calculateAdaptiveHttpFloodThreshold(const Behavior& b) const;
+    [[nodiscard]] double calculateTimeOfDayFactor() const;
+    [[nodiscard]] double calculateNetworkLoadFactor() const;
+    [[nodiscard]] double calculateLegitimacyMultiplier(const Behavior& b) const;
     [[nodiscard]] bool isBusinessHours() const;
     
     BehaviorTracker();
@@ -426,6 +433,14 @@ public:
     // Metrics methods
     size_t get_connection_count() const;
     size_t get_tracked_ips_count() const;
+    
+    // NEW: Behavioral metrics for adaptive thresholds
+    double getGlobalSynRate() const;
+    double getGlobalAckRate() const;
+    double getGlobalHttpRate() const;
+    double getAverageBaselineSynRate() const;
+    double getAverageBaselineAckRate() const;
+    double getAverageBaselineHttpRate() const;
     
     // Memory management
     void cleanup_expired_behaviors();

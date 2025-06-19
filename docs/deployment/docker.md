@@ -71,7 +71,7 @@ services:
     privileged: true
     volumes:
       - ./snort_ddos_config.lua:/etc/snort/snort_ddos_config.lua:ro
-      - /var/log/ddos_inspector/ddos_inspector_stats:/var/log/ddos_inspector/ddos_inspector_stats
+      - /var/log/ddos_inspector/metrics.log:/var/log/ddos_inspector/metrics.log
       - /var/log/snort:/var/log/snort
     environment:
       - SNORT_INTERFACE=${SNORT_INTERFACE:-eth0}
@@ -122,7 +122,7 @@ services:
     privileged: true
     volumes:
       - ./snort_ddos_config.lua:/etc/snort/snort_ddos_config.lua:ro
-      - /var/log/ddos_inspector/ddos_inspector_stats:/var/log/ddos_inspector/ddos_inspector_stats
+      - /var/log/ddos_inspector/metrics.log:/var/log/ddos_inspector/metrics.log
       - ddos_logs:/var/log/snort
     environment:
       - SNORT_INTERFACE=${SNORT_INTERFACE:-eth0}
@@ -224,7 +224,7 @@ export MAX_TRACKED_IPS=100000
 export CLEANUP_INTERVAL=60
 
 # Monitoring
-export METRICS_FILE=/var/log/ddos_inspector/ddos_inspector_stats
+export METRICS_FILE=/var/log/ddos_inspector/metrics.log
 export PROMETHEUS_PORT=9090
 ```
 
@@ -239,7 +239,7 @@ volumes:
   - ./nftables.conf:/etc/nftables.conf:ro
   
   # Data and logs
-  - /var/log/ddos_inspector/ddos_inspector_stats:/var/log/ddos_inspector/ddos_inspector_stats
+  - /var/log/ddos_inspector/metrics.log:/var/log/ddos_inspector/metrics.log
   - /var/log/snort:/var/log/snort
   - /var/lib/snort:/var/lib/snort
   
@@ -339,7 +339,7 @@ services:
 volumes:
   # Use tmpfs for high-frequency writes
   - type: tmpfs
-    target: /var/log/ddos_inspector/ddos_inspector_stats
+    target: /var/log/ddos_inspector/metrics.log
     tmpfs:
       size: 100M
   
@@ -379,7 +379,7 @@ services:
     networks:
       - ddos_network
     volumes:
-      - /var/log/ddos_inspector/ddos_inspector_stats:/var/log/ddos_inspector/ddos_inspector_stats
+      - /var/log/ddos_inspector/metrics.log:/var/log/ddos_inspector/metrics.log
 
 networks:
   ddos_network:
@@ -422,7 +422,7 @@ spec:
           mountPath: /etc/snort/snort_ddos_config.lua
           subPath: snort_ddos_config.lua
         - name: metrics
-          mountPath: /var/log/ddos_inspector/ddos_inspector_stats
+          mountPath: /var/log/ddos_inspector/metrics.log
         resources:
           requests:
             memory: "1Gi"
@@ -436,7 +436,7 @@ spec:
           name: ddos-inspector-config
       - name: metrics
         hostPath:
-          path: /var/log/ddos_inspector/ddos_inspector_stats
+          path: /var/log/ddos_inspector/metrics.log
           type: FileOrCreate
       nodeSelector:
         node-type: edge

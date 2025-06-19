@@ -66,7 +66,7 @@ resume_ddos_inspector() {
 
 # Function to reset DDoS Inspector stats file with permission handling
 reset_stats_file() {
-    local stats_file="/var/log/ddos_inspector/ddos_inspector_stats"
+    local stats_file="/var/log/ddos_inspector/metrics.log"
     
     echo -e "${BLUE}[RESET] Resetting DDoS Inspector stats file...${NC}"
     
@@ -88,7 +88,7 @@ detection_time:0"
     
     # Method 1: Reset from inside the container (most reliable)
     echo "    Attempting to reset stats from inside the container..."
-    if docker exec ddos_inspector sh -c "echo '$reset_content' > /var/log/ddos_inspector/ddos_inspector_stats" 2>/dev/null; then
+    if docker exec ddos_inspector sh -c "echo '$reset_content' > /var/log/ddos_inspector/metrics.log" 2>/dev/null; then
         echo -e "${GREEN}[SUCCESS] DDoS Inspector stats reset from inside container${NC}"
         
         # Also send a signal to the process to refresh stats if possible
@@ -105,7 +105,7 @@ detection_time:0"
         # If direct write fails, try via Docker if container is running
         elif docker ps --format '{{.Names}}' | grep -q '^ddos_inspector$'; then
             echo "    Attempting to reset stats file inside Docker container..."
-            if docker exec ddos_inspector sh -c "echo \'$reset_content\' > /var/log/ddos_inspector/ddos_inspector_stats" 2>/dev/null; then
+            if docker exec ddos_inspector sh -c "echo \'$reset_content\' > /var/log/ddos_inspector/metrics.log" 2>/dev/null; then
                 echo -e "${GREEN}[SUCCESS] Stats file reset inside ddos_inspector container${NC}"
             else
                 echo -e "${YELLOW}[WARNING] Failed to reset stats file inside container. Check permissions or if path exists.${NC}"
@@ -134,7 +134,7 @@ detection_time:0"
     echo "    Current stats from host (if available):"
     sudo cat "$stats_file" 2>/dev/null | sed 's/^/    /' || echo -e "${YELLOW}[WARNING] Could not read stats from host${NC}"
     echo "    Current stats from ddos_inspector container (if running):"
-    docker exec ddos_inspector cat /var/log/ddos_inspector/ddos_inspector_stats 2>/dev/null | sed 's/^/    /' || echo -e "${YELLOW}[WARNING] Could not read stats from inside container${NC}"
+    docker exec ddos_inspector cat /var/log/ddos_inspector/metrics.log 2>/dev/null | sed 's/^/    /' || echo -e "${YELLOW}[WARNING] Could not read stats from inside container${NC}"
 
     echo ""
 }

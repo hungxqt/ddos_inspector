@@ -125,6 +125,65 @@ static std::string formatCurrentTime()
     return oss.str();
 }
 
+// Helper function to get path from environment variables or .env file
+static std::string getPathFromEnv(const char* env_var_name, const std::string& default_path) {
+    // First, try to get from environment variable directly
+    const char* env_value = getenv(env_var_name);
+    if (env_value && strlen(env_value) > 0) {
+        return std::string(env_value);
+    }
+    
+    // Then try to read from .env file in current directory
+    std::ifstream env_file(".env");
+    if (env_file.is_open()) {
+        std::string line;
+        std::string search_key = std::string(env_var_name) + "=";
+        
+        while (std::getline(env_file, line)) {
+            // Skip comments and empty lines
+            if (line.empty() || line[0] == '#') continue;
+            
+            // Remove leading/trailing whitespace
+            line.erase(0, line.find_first_not_of(" \t\r\n"));
+            line.erase(line.find_last_not_of(" \t\r\n") + 1);
+            
+            // Check if this line contains our variable
+            if (line.find(search_key) == 0) {
+                std::string value = line.substr(search_key.length());
+                
+                // Remove quotes if present
+                if (value.length() >= 2 && 
+                    ((value.front() == '"' && value.back() == '"') ||
+                     (value.front() == '\'' && value.back() == '\''))) {
+                    value = value.substr(1, value.length() - 2);
+                }
+                
+                if (!value.empty()) {
+                    env_file.close();
+                    return value;
+                }
+            }
+        }
+        env_file.close();
+    }
+    
+    // Fall back to SNORT_DATA_DIR + filename only (extract filename from default_path)
+    const char* snort_data_dir = getenv("SNORT_DATA_DIR");
+    if (snort_data_dir) {
+        // Extract just the filename from the default path
+        size_t last_slash = default_path.find_last_of('/');
+        std::string filename = (last_slash != std::string::npos) ? default_path.substr(last_slash + 1) : default_path;
+        return std::string(snort_data_dir) + "/" + filename;
+    }
+    
+    // Final fallback: if default_path is absolute, use it; otherwise prepend /tmp/
+    if (!default_path.empty() && default_path[0] == '/') {
+        return default_path;
+    } else {
+        return "/tmp/" + default_path;
+    }
+}
+
 // Thread-safe time wrapper similar to safe_localtime() from stats_engine.cpp
 static struct tm safeLocaltime(std::time_t time)
 {
@@ -140,23 +199,6 @@ static struct tm safeLocaltime(std::time_t time)
     std::ostringstream oss;
     oss << std::put_time(&tm, format);
     return oss.str();
-}
-
-// Global tuning parameters instance
-ThresholdTuning g_threshold_tuning;
-
-// Implementation of ThresholdTuning methods
-void ThresholdTuning::logConfiguration() const {
-    std::ostringstream config_msg;
-    config_msg << "Threshold Tuning Configuration:\n"
-               << "  - Adaptation Factor: " << adaptation_factor << "\n"
-               << "  - Entropy Multiplier: " << entropy_multiplier << "\n" 
-               << "  - Rate Multiplier: " << rate_multiplier << "\n"
-               << "  - Min Entropy Threshold: " << min_entropy_threshold << "\n"
-               << "  - Min Rate Threshold: " << min_rate_threshold << "\n"
-               << "  - Base Confidence (Stats): " << confidence_base_stats << "\n"
-               << "  - Base Confidence (Behavior): " << confidence_base_behavior;
-    DDosLogger::info(config_msg.str());
 }
 
 // Consolidated confidence calculation helper using configurable tuning
@@ -389,14 +431,17 @@ static const Parameter ddos_params[] = {
 
     {"block_timeout", Parameter::PT_INT, "1:3600", "600", "IP block timeout in seconds"},
 
-    {"blocked_ips_file", Parameter::PT_STRING, nullptr, "",
-     "path to blocked IPs output file (use $SNORT_DATA_DIR if empty)"},
+    {"blocked_ips_file", Parameter::PT_STRING, nullptr, "/var/log/ddos_inspector/blocked_ips.log",
+     "path to blocked IPs output file (auto-reads from $DDOS_BLOCKED_IPS_FILE env var or .env file, fallback: $SNORT_DATA_DIR)"},
 
-    {"rate_limited_ips_file", Parameter::PT_STRING, nullptr, "", 
-     "path to rate limited IPs output file (use $SNORT_DATA_DIR if empty)"},
+    {"rate_limited_ips_file", Parameter::PT_STRING, nullptr, "/var/log/ddos_inspector/rate_limited_ips.log", 
+     "path to rate limited IPs output file (auto-reads from $DDOS_RATE_LIMITED_IPS_FILE env var or .env file, fallback: $SNORT_DATA_DIR)"},
 
-    {"metrics_file", Parameter::PT_STRING, nullptr, "",
-     "path to metrics output file (use $SNORT_DATA_DIR if empty)"},
+    {"metrics_file", Parameter::PT_STRING, nullptr, "/var/log/ddos_inspector/metrics.log",
+     "path to metrics output file (auto-reads from $DDOS_METRICS_FILE env var or .env file, fallback: $SNORT_DATA_DIR)"},
+
+    {"use_env_files", Parameter::PT_BOOL, nullptr, "true",
+     "enable automatic reading from environment variables and .env file"},
 
     {"config_profile", Parameter::PT_STRING, nullptr, "default",
      "configuration profile: default, strict, permissive, web_server, game_server"},
@@ -435,6 +480,22 @@ static const Parameter ddos_params[] = {
     {"rate_multiplier", Parameter::PT_REAL, "1.0:10.0", "3.0",
      "rate threshold multiplier for baseline adaptation"},
 
+    // NEW: Adaptive behavioral threshold parameters
+    {"syn_flood_baseline_multiplier", Parameter::PT_REAL, "1.0:20.0", "5.0",
+     "SYN flood threshold multiplier for baseline adaptation"},
+
+    {"ack_flood_baseline_multiplier", Parameter::PT_REAL, "1.0:15.0", "3.0",
+     "ACK flood threshold multiplier for baseline adaptation"},
+
+    {"http_flood_baseline_multiplier", Parameter::PT_REAL, "1.0:50.0", "10.0",
+     "HTTP flood threshold multiplier for baseline adaptation"},
+
+    {"enable_time_of_day_adaptation", Parameter::PT_BOOL, nullptr, "true",
+     "enable time-of-day based threshold adaptation"},
+
+    {"enable_network_load_adaptation", Parameter::PT_BOOL, nullptr, "true",
+     "enable network load based threshold adaptation"},
+
     {nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr}};
 
 #define DDOS_NAME "ddos_inspector"
@@ -442,7 +503,15 @@ static const Parameter ddos_params[] = {
 
 DdosInspectorModule::DdosInspectorModule() : Module(DDOS_NAME, DDOS_HELP, ddos_params)
 {
+    // Initialize file paths from environment variables/env file with fallbacks
+    metrics_file = getPathFromEnv("DDOS_METRICS_FILE", "/var/log/ddos_inspector/metrics.log");
+    blocked_ips_file = getPathFromEnv("DDOS_BLOCKED_IPS_FILE", "/var/log/ddos_inspector/blocked_ips.log"); 
+    rate_limited_ips_file = getPathFromEnv("DDOS_RATE_LIMITED_IPS_FILE", "/var/log/ddos_inspector/rate_limited_ips.log");
+    
     DDosLogger::info("DDoS Inspector Plugin Module loaded successfully!");
+    DDosLogger::info("File paths initialized: metrics=" + metrics_file + 
+                     ", blocked_ips=" + blocked_ips_file + 
+                     ", rate_limited_ips=" + rate_limited_ips_file);
 }
 
 const Parameter *DdosInspectorModule::get_parameters() const
@@ -463,62 +532,64 @@ bool DdosInspectorModule::set(const char *fqn, Value &v, SnortConfig *)
     else if (v.is("metrics_file"))
     {
         std::string path = v.get_string();
+        
+        // Always try environment variables first if env files are enabled
+        if (use_env_files) {
+            std::string env_path = getPathFromEnv("DDOS_METRICS_FILE", path);
+            if (env_path != path) {
+                path = env_path; // Use environment variable value
+            }
+        }
+        
         if (validateMetricsPath(path))
         {
             metrics_file = path;
         }
         else
         {
-            // Use SNORT_DATA_DIR if available, otherwise /tmp
-            const char* snort_data_dir = getenv("SNORT_DATA_DIR");
-            if (snort_data_dir)
-            {
-                metrics_file = std::string(snort_data_dir) + "/ddos_inspector_stats";
-            }
-            else
-            {
-                metrics_file = "/tmp/ddos_inspector_stats";
-            }
+            DDosLogger::error("Invalid metrics file path, using default: " + metrics_file);
         }
     }
     else if (v.is("blocked_ips_file"))
     {
         std::string path = v.get_string();
+        
+        // Always try environment variables first if env files are enabled
+        if (use_env_files) {
+            std::string env_path = getPathFromEnv("DDOS_BLOCKED_IPS_FILE", path);
+            if (env_path != path) {
+                path = env_path; // Use environment variable value
+            }
+        }
+        
         if (validateMetricsPath(path))
         {
             blocked_ips_file = path;
         }
         else
         {
-            const char* snort_data_dir = getenv("SNORT_DATA_DIR");
-            if (snort_data_dir)
-            {
-                blocked_ips_file = std::string(snort_data_dir) + "/ddos_inspector_blocked_ips.txt";
-            }
-            else
-            {
-                blocked_ips_file = "/tmp/ddos_inspector_blocked_ips.txt";
-            }
+            DDosLogger::error("Invalid blocked IPs file path, using default: " + blocked_ips_file);
         }
     }
     else if (v.is("rate_limited_ips_file"))
     {
         std::string path = v.get_string();
+        
+        // Always try environment variables first if env files are enabled
+        if (use_env_files) {
+            std::string env_path = getPathFromEnv("DDOS_RATE_LIMITED_IPS_FILE", path);
+            if (env_path != path) {
+                path = env_path; // Use environment variable value
+            }
+        }
+        
         if (validateMetricsPath(path))
         {
             rate_limited_ips_file = path;
         }
         else
         {
-            const char* snort_data_dir = getenv("SNORT_DATA_DIR");
-            if (snort_data_dir)
-            {
-                rate_limited_ips_file = std::string(snort_data_dir) + "/ddos_inspector_rate_limited_ips.txt";
-            }
-            else
-            {
-                rate_limited_ips_file = "/tmp/ddos_inspector_rate_limited_ips.txt";
-            }
+            DDosLogger::error("Invalid rate limited IPs file path, using default: " + rate_limited_ips_file);
         }
     }
     else if (v.is("config_profile"))
@@ -556,6 +627,33 @@ bool DdosInspectorModule::set(const char *fqn, Value &v, SnortConfig *)
         rate_multiplier = v.get_real();
         g_threshold_tuning.rate_multiplier = rate_multiplier;
     }
+    else if (v.is("syn_flood_baseline_multiplier"))
+    {
+        syn_flood_baseline_multiplier = v.get_real();
+        g_threshold_tuning.syn_flood_baseline_multiplier = syn_flood_baseline_multiplier;
+    }
+    else if (v.is("ack_flood_baseline_multiplier"))
+    {
+        ack_flood_baseline_multiplier = v.get_real();
+        g_threshold_tuning.ack_flood_baseline_multiplier = ack_flood_baseline_multiplier;
+    }
+    else if (v.is("http_flood_baseline_multiplier"))
+    {
+        http_flood_baseline_multiplier = v.get_real();
+        g_threshold_tuning.http_flood_baseline_multiplier = http_flood_baseline_multiplier;
+    }
+    else if (v.is("enable_time_of_day_adaptation"))
+    {
+        enable_time_of_day_adaptation = v.get_bool();
+        g_threshold_tuning.enable_time_of_day_adaptation = enable_time_of_day_adaptation;
+    }
+    else if (v.is("enable_network_load_adaptation"))
+    {
+        enable_network_load_adaptation = v.get_bool();
+        g_threshold_tuning.enable_network_load_adaptation = enable_network_load_adaptation;
+    }
+    else if (v.is("use_env_files"))
+        use_env_files = v.get_bool();
     else
         return false;
 
@@ -653,7 +751,10 @@ bool DdosInspectorModule::validateMetricsPath(const std::string &path) const
 {
     // Validate metrics file path for security
     const std::vector<std::string> allowed_prefixes = {
-        "/var/log/ddos_inspector/", "/tmp/ddos_inspector/",
+        "/var/log/ddos_inspector/", 
+        "/var/log/snort/",
+        "/tmp/ddos_inspector/",
+        "/tmp/", // Allow /tmp directory for fallback cases
         "/home/", // Allow user home directories for development
         "/opt/ddos_inspector/"};
 
@@ -829,7 +930,7 @@ void DdosInspector::eval(Packet *p)
     auto [src_ip, dst_ip] = extractAddresses(p);
 
     // Extract packet data using helper
-    PacketData pkt_data = extractPacketData(p, src_ip, dst_ip, packet_size);
+    PacketData pkt_data = extractPacketData(p, src_ip, dst_ip, packet_size, proto);
 
     // Analyze packet with improved correlation
     bool stats_anomaly = stats_engine->analyze(pkt_data);
@@ -1372,7 +1473,7 @@ void DdosInspector::updateAdaptiveThresholds()
     {
         std::lock_guard<std::mutex> lock(metrics_mutex);
 
-        // Update baseline entropy based on recent observations
+        // Update baseline entropy and rate based on recent observations
         if (stats_engine)
         {
             double current_entropy = stats_engine->get_entropy();
@@ -1395,6 +1496,41 @@ void DdosInspector::updateAdaptiveThresholds()
             adaptive_thresholds.rate_threshold =
                 std::max(g_threshold_tuning.min_rate_threshold, 
                         adaptive_thresholds.baseline_rate * g_threshold_tuning.rate_multiplier);
+        }
+
+        // Update behavioral thresholds based on behavior tracker metrics
+        if (behavior_tracker && g_threshold_tuning.enable_adaptive_behavioral_thresholds)
+        {
+            // Get current behavioral rates
+            double current_syn_rate = behavior_tracker->getGlobalSynRate();
+            double current_ack_rate = behavior_tracker->getGlobalAckRate();
+            double current_http_rate = behavior_tracker->getGlobalHttpRate();
+
+            // Update baseline behavioral rates using EWMA
+            adaptive_thresholds.baseline_syn_rate =
+                g_threshold_tuning.adaptation_factor * current_syn_rate +
+                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_syn_rate;
+
+            adaptive_thresholds.baseline_ack_rate =
+                g_threshold_tuning.adaptation_factor * current_ack_rate +
+                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_ack_rate;
+
+            adaptive_thresholds.baseline_http_rate =
+                g_threshold_tuning.adaptation_factor * current_http_rate +
+                (1.0 - g_threshold_tuning.adaptation_factor) * adaptive_thresholds.baseline_http_rate;
+
+            // Update adaptive behavioral thresholds with multipliers and minimums
+            adaptive_thresholds.syn_flood_threshold =
+                std::max(g_threshold_tuning.min_syn_flood_threshold,
+                        adaptive_thresholds.baseline_syn_rate * g_threshold_tuning.syn_flood_multiplier);
+
+            adaptive_thresholds.ack_flood_threshold =
+                std::max(g_threshold_tuning.min_ack_flood_threshold,
+                        adaptive_thresholds.baseline_ack_rate * g_threshold_tuning.ack_flood_multiplier);
+
+            adaptive_thresholds.http_flood_threshold =
+                std::max(g_threshold_tuning.min_http_flood_threshold,
+                        adaptive_thresholds.baseline_http_rate * g_threshold_tuning.http_flood_multiplier);
         }
 
         adaptive_thresholds.last_update = now;
@@ -2133,11 +2269,12 @@ std::pair<std::string, std::string> DdosInspector::extractAddresses(snort::Packe
 }
 
 PacketData DdosInspector::extractPacketData(snort::Packet *p, const std::string &src_ip,
-                                            const std::string &dst_ip, uint32_t packet_size)
+                                            const std::string &dst_ip, uint32_t packet_size, uint8_t protocol)
 {
     PacketData pkt_data;
     pkt_data.src_ip = src_ip;
     pkt_data.dst_ip = dst_ip;
+    pkt_data.protocol = protocol;
     
     // Use cached packet size for performance if provided, otherwise calculate
     pkt_data.size = packet_size > 0 ? packet_size : static_cast<uint32_t>(p->dsize);
@@ -2147,6 +2284,44 @@ PacketData DdosInspector::extractPacketData(snort::Packet *p, const std::string 
     pkt_data.is_syn = false;
     pkt_data.is_ack = false;
     pkt_data.is_http = false;
+    
+    // NEW: Detect multicast/broadcast traffic
+    pkt_data.is_multicast = false;
+    pkt_data.is_broadcast = false;
+    
+    // Check for multicast/broadcast destination
+    if (!dst_ip.empty()) {
+        // IPv4 checks
+        if (dst_ip.find('.') != std::string::npos) {
+            struct sockaddr_in sa4;
+            if (inet_pton(AF_INET, dst_ip.c_str(), &sa4.sin_addr) == 1) {
+                uint32_t addr = ntohl(sa4.sin_addr.s_addr);
+                
+                // Broadcast address
+                if (addr == 0xFFFFFFFF) {
+                    pkt_data.is_broadcast = true;
+                }
+                // Multicast range (224.0.0.0 to 239.255.255.255)
+                else if ((addr >= 0xE0000000) && (addr <= 0xEFFFFFFF)) {
+                    pkt_data.is_multicast = true;
+                }
+                // Limited broadcast (ends with .255)
+                else if ((addr & 0xFF) == 0xFF) {
+                    pkt_data.is_broadcast = true;
+                }
+            }
+        }
+        // IPv6 checks
+        else if (dst_ip.find(':') != std::string::npos) {
+            struct sockaddr_in6 sa6;
+            if (inet_pton(AF_INET6, dst_ip.c_str(), &sa6.sin6_addr) == 1) {
+                // Multicast (starts with ff)
+                if (sa6.sin6_addr.s6_addr[0] == 0xff) {
+                    pkt_data.is_multicast = true;
+                }
+            }
+        }
+    }
 
     // Extract TCP/UDP port information
     if (p->ptrs.tcph)

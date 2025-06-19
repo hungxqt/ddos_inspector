@@ -183,7 +183,7 @@ docker-compose logs ddos-inspector | grep "Using network interface"
 docker exec ddos_inspector snort --version
 
 # View real-time stats
-docker exec ddos_inspector cat /var/log/ddos_inspector/ddos_inspector_stats
+docker exec ddos_inspector cat /var/log/ddos_inspector/metrics.log
 ```
 
 ## Troubleshooting

@@ -25,7 +25,7 @@ services:
       - /run/xtables.lock:/run/xtables.lock  # Share iptables lock with host
     healthcheck:
       # Check if Snort binary is present, plugin is loaded, and stats file exists
-      test: ["CMD", "sh", "-c", "snort --version && [ -f /var/log/ddos_inspector/ddos_inspector_stats ]"]
+      test: ["CMD", "sh", "-c", "snort --version && [ -f /var/log/ddos_inspector/metrics.log ]"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -193,7 +193,7 @@ services:
     ports:
       - "9091:9091"
     environment:
-      - DDOS_STATS_FILE=/var/log/ddos_inspector/ddos_inspector_stats
+      - DDOS_STATS_FILE=/var/log/ddos_inspector/metrics.log
       - BIND_ADDRESS=0.0.0.0:9091
     volumes:
       - ./data:/var/log/ddos_inspector  # Mount the directory

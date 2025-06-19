@@ -164,7 +164,7 @@ grep "SYN_FLOOD" /var/log/snort/alert
 sudo nft list set inet filter ddos_ip_set
 
 # Monitor metrics
-watch -n 1 'cat /var/log/ddos_inspector/ddos_inspector_stats | grep syn_flood'
+watch -n 1 'cat /var/log/ddos_inspector/metrics.log | grep syn_flood'
 ```
 
 ### HTTP Flood Simulation

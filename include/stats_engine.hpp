@@ -3,6 +3,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 #include <deque>
 #include <shared_mutex>
@@ -16,6 +17,11 @@ public:
     double get_current_rate() const;
     double get_entropy() const;
     double get_baseline_rate() const { return baseline_rate; }
+    
+    // NEW: Methods for baseline learning period
+    bool is_learning_complete() const;
+    void force_complete_learning(); // For testing
+    void update_stats_learning_mode(const PacketData& pkt); // For learning mode
     
     // Testing hooks
     double calculate_dynamic_threshold();  // Exposed for unit testing
@@ -35,6 +41,17 @@ private:
         double stddev_rate = 0.0;
     };
     
+    // NEW: Per-destination tracking for more granular rate analysis
+    struct DestinationStats {
+        double ewma = 0.0;
+        int packet_count = 0;
+        std::chrono::steady_clock::time_point last_seen;
+        std::chrono::steady_clock::time_point first_seen;
+        std::deque<double> rate_history;
+        double mean_rate = 0.0;
+        double stddev_rate = 0.0;
+    };
+    
     struct ProtocolStats {
         double expected_entropy = 0.0;
         int packet_count = 0;
@@ -45,6 +62,12 @@ private:
     mutable std::shared_mutex stats_mutex;
     std::unordered_map<std::string, IPStats> stats;
     std::unordered_map<std::string, ProtocolStats> protocol_baselines;
+    
+    // NEW: Per-destination tracking - key format: "src_ip:dst_ip:dst_port"
+    std::unordered_map<std::string, DestinationStats> destination_stats;
+    
+    // NEW: Well-known multicast/broadcast addresses for whitelisting
+    std::unordered_set<std::string> multicast_whitelist;
     
     double entropy_threshold;
     double ewma_alpha;
@@ -62,7 +85,13 @@ private:
     std::chrono::steady_clock::time_point last_packet_time;
     std::chrono::steady_clock::time_point start_time;
     std::chrono::steady_clock::time_point last_cleanup;
-      // Dynamic threshold system (now functional)
+    
+    // NEW: Learning period variables  
+    bool initial_learning_done = false;
+    static constexpr int LEARNING_PACKET_THRESHOLD = 5000;
+    static constexpr int LEARNING_TIME_SECONDS = 30;
+    
+    // Dynamic threshold system (now functional)
     double false_positive_rate = 0.0;
     double detection_accuracy = 0.95;
     bool enable_local_time_bias = true;  // Configurable time-of-day adjustments
@@ -80,6 +109,19 @@ private:
     double calculate_rate_deviation(const std::string& src_ip, double current_rate);    double analyze_payload_patterns(const PacketData& pkt);
     double analyze_http_anomalies(const PacketData& pkt);
     double analyze_temporal_patterns(const std::string& src_ip);
+    
+    // NEW: Per-destination tracking methods
+    void update_destination_statistics(const std::string& src_ip, const std::string& dst_ip, 
+                                     uint16_t dst_port, double rate);
+    double calculate_destination_rate_deviation(const std::string& src_ip, const std::string& dst_ip,
+                                               uint16_t dst_port, double current_rate);
+    std::string make_destination_key(const std::string& src_ip, const std::string& dst_ip, 
+                                   uint16_t dst_port) const;
+    
+    // NEW: Protocol-aware detection methods
+    bool is_well_known_service_port(uint16_t port, bool is_udp) const;
+    double get_protocol_specific_rate_threshold(const PacketData& pkt) const;
+    void initialize_multicast_whitelist();
     
     // FIXED: Proper baseline calculation
     double calculate_95th_percentile_baseline();

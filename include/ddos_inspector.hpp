@@ -47,6 +47,24 @@ struct ThresholdTuning {
     double entropy_ratio_high_threshold = 5.0; // High entropy ratio threshold
     double entropy_ratio_med_threshold = 3.0;  // Medium entropy ratio threshold
     
+    // NEW: Adaptive behavioral thresholds
+    bool enable_adaptive_behavioral_thresholds = true; // Enable adaptive behavioral thresholds
+    double syn_flood_multiplier = 5.0;        // Multiplier for SYN flood threshold
+    double ack_flood_multiplier = 3.0;        // Multiplier for ACK flood threshold  
+    double http_flood_multiplier = 10.0;      // Multiplier for HTTP flood threshold
+    double syn_flood_baseline_multiplier = 5.0;    // Multiplier for SYN flood baseline
+    double ack_flood_baseline_multiplier = 3.0;    // Multiplier for ACK flood baseline  
+    double http_flood_baseline_multiplier = 10.0;  // Multiplier for HTTP flood baseline
+    double legitimacy_factor_threshold = 2.0;      // Legitimacy score threshold for adjustment
+    double time_of_day_multiplier = 1.0;           // Time-based threshold adjustment
+    double network_load_multiplier = 1.0;          // Network load-based adjustment
+    double min_syn_flood_threshold = 100.0;        // Minimum SYN flood threshold
+    double min_ack_flood_threshold = 50.0;         // Minimum ACK flood threshold
+    double min_http_flood_threshold = 200.0;       // Minimum HTTP flood threshold
+    double adaptive_window_minutes = 10.0;         // Window for adaptive updates
+    bool enable_time_of_day_adaptation = true;     // Enable time-based adaptation
+    bool enable_network_load_adaptation = true;    // Enable load-based adaptation
+    
     void logConfiguration() const;
 };
 
@@ -140,15 +158,23 @@ public:
     uint32_t block_timeout = 600; // seconds
     uint32_t connection_threshold = 1000;
     uint32_t rate_threshold = 50000;    uint32_t max_tracked_ips = 10000;
-    std::string metrics_file = "/var/log/ddos_inspector/ddos_inspector_stats";
-    std::string blocked_ips_file = "/var/log/ddos_inspector/blocked_ips.txt";
-    std::string rate_limited_ips_file = "/var/log/ddos_inspector/rate_limited_ips.txt";
+    bool use_env_files = true;  // NEW: Enable/disable environment variable support
+    std::string metrics_file;
+    std::string blocked_ips_file;
+    std::string rate_limited_ips_file;
     std::string log_level = "info";
     std::string config_profile = "default";
     std::string protected_networks = "";
     double adaptation_factor = 0.1;
     double entropy_multiplier = 0.3;
     double rate_multiplier = 3.0;
+    
+    // NEW: Adaptive behavioral threshold parameters
+    double syn_flood_baseline_multiplier = 5.0;
+    double ack_flood_baseline_multiplier = 3.0;
+    double http_flood_baseline_multiplier = 10.0;
+    bool enable_time_of_day_adaptation = true;
+    bool enable_network_load_adaptation = true;
 };
 
 class DdosInspector : public snort::Inspector
@@ -164,13 +190,24 @@ public:
     bool configure(snort::SnortConfig*) override { return true; }
 
 private:
-    // TODO: IMPROVEMENT - Add adaptive threshold management
+    // Enhanced adaptive threshold management
     struct AdaptiveThresholds {
         double entropy_threshold = 2.0;
         double rate_threshold = 50000.0;
         std::chrono::steady_clock::time_point last_update;
         double baseline_entropy = 2.0;
         double baseline_rate = 1000.0;
+        
+        // NEW: Adaptive behavioral thresholds
+        double syn_flood_threshold = 5000.0;
+        double ack_flood_threshold = 1000.0;
+        double http_flood_threshold = 10000.0;
+        double baseline_syn_rate = 100.0;
+        double baseline_ack_rate = 50.0;
+        double baseline_http_rate = 200.0;
+        double current_network_load = 1.0;
+        double time_of_day_factor = 1.0;
+        std::chrono::steady_clock::time_point last_behavioral_update;
     } adaptive_thresholds;
 
     // Configuration
@@ -257,7 +294,7 @@ private:
     
     // Protocol parsing helpers for optimized eval function
     std::pair<std::string, std::string> extractAddresses(snort::Packet* p);
-    PacketData extractPacketData(snort::Packet* p, const std::string& src_ip, const std::string& dst_ip, uint32_t packet_size = 0);
+    PacketData extractPacketData(snort::Packet* p, const std::string& src_ip, const std::string& dst_ip, uint32_t packet_size = 0, uint8_t protocol = 0);
     bool checkForFragmentation(snort::Packet* p, const std::string& src_ip);
     
     // Dynamic mitigation methods

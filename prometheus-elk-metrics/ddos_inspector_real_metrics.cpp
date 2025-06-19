@@ -49,7 +49,7 @@ private:
     
 public:
     DDoSInspectorMetricsExporter(const std::string& bind_address = "0.0.0.0:9091", 
-                                const std::string& stats_file = "/var/log/ddos_inspector/ddos_inspector_stats")
+                                const std::string& stats_file = "/var/log/ddos_inspector/metrics.log")
         : registry{std::make_shared<prometheus::Registry>()}
         , exposer{bind_address}
         , packets_processed_family{prometheus::BuildCounter()
@@ -259,7 +259,7 @@ const char* get_env_or_default(const char* env_var, const char* default_val) {
 int main(int argc, char** argv) {
     try {
         const char* bind_address_env = get_env_or_default("BIND_ADDRESS", "0.0.0.0:9091");
-        const char* stats_file_env = get_env_or_default("DDOS_STATS_FILE", "/var/log/ddos_inspector/ddos_inspector_stats");
+        const char* stats_file_env = get_env_or_default("DDOS_STATS_FILE", "/var/log/ddos_inspector/metrics.log");
 
         std::string bind_address = bind_address_env;
         std::string stats_file = stats_file_env;

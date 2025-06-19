@@ -333,17 +333,17 @@ void FirewallAction::drop_privileges() {
         return;
     }
     
-    // Set only CAP_NET_ADMIN in effective and permitted sets
-    cap_value_t cap_values[] = {CAP_NET_ADMIN};
-    if (cap_set_flag(caps, CAP_EFFECTIVE, 1, cap_values, CAP_SET) != 0 ||
-        cap_set_flag(caps, CAP_PERMITTED, 1, cap_values, CAP_SET) != 0) {
+    // Set CAP_NET_ADMIN and CAP_NET_RAW in effective and permitted sets
+    cap_value_t cap_values[] = {CAP_NET_ADMIN, CAP_NET_RAW};
+    if (cap_set_flag(caps, CAP_EFFECTIVE, 2, cap_values, CAP_SET) != 0 ||
+        cap_set_flag(caps, CAP_PERMITTED, 2, cap_values, CAP_SET) != 0) {
         cap_free(caps);
-        log_firewall_action("ERROR", "Failed to set CAP_NET_ADMIN flags", errno);
+        log_firewall_action("ERROR", "Failed to set CAP_NET_ADMIN and CAP_NET_RAW flags", errno);
         return;
     }
     
     // FIXED: Ensure inheritable capabilities are cleared
-    if (cap_set_flag(caps, CAP_INHERITABLE, 1, cap_values, CAP_CLEAR) != 0) {
+    if (cap_set_flag(caps, CAP_INHERITABLE, 2, cap_values, CAP_CLEAR) != 0) {
         cap_free(caps);
         log_firewall_action("ERROR", "Failed to clear inheritable capabilities", errno);
         return;
@@ -356,13 +356,24 @@ void FirewallAction::drop_privileges() {
         return;
     }
     
+    // FIXED: Raise capabilities into ambient set so they survive execvp()
+    // This allows child processes (nft commands) to inherit the necessary capabilities
+    cap_value_t cap_values_ambient[] = {CAP_NET_ADMIN, CAP_NET_RAW};
+    for (cap_value_t cap : cap_values_ambient) {
+        if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, cap, 0, 0) == -1) {
+            log_firewall_action("ERROR", "Failed to raise capability " + std::to_string(cap) + " to ambient set", errno);
+            // Continue with other capabilities - partial success is better than total failure
+        }
+    }
+    
     cap_free(caps);
     privileges_dropped = true;
     
     std::string uid_info = nobody ? 
         " (UID: " + std::to_string(nobody->pw_uid) + ", GID: " + std::to_string(nobody->pw_gid) + ")" : 
         " (UID unchanged)";
-    log_firewall_action("INFO", "Privileges successfully dropped to CAP_NET_ADMIN only" + uid_info, 0);
+    log_firewall_action("INFO", "Privileges successfully dropped to CAP_NET_ADMIN and CAP_NET_RAW only" + uid_info + 
+                       " - Capabilities raised to ambient set for child processes", 0);
 }
 
 bool FirewallAction::validate_ip_address(const std::string& ip) {
@@ -1085,9 +1096,9 @@ void FirewallAction::initialize_default_whitelist() {
     std::lock_guard<std::shared_mutex> lock(whitelist_shared_mutex);
     
     // RFC 1918 private ranges
-    whitelist.insert("10.0.0.0/8");
-    whitelist.insert("172.16.0.0/12");  
-    whitelist.insert("192.168.0.0/16");
+    // whitelist.insert("10.0.0.0/8");
+    // whitelist.insert("172.16.0.0/12");  
+    // whitelist.insert("192.168.0.0/16");
     
     // Loopback ranges
     whitelist.insert("127.0.0.0/8");
