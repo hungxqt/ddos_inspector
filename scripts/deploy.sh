@@ -887,6 +887,9 @@ verify_installation() {
 show_deployment_summary() {
     echo -e "${GREEN}=== Deployment Complete ===${NC}"
     echo
+    echo -e "${BLUE}=== Current Configuration ===${NC}"
+    show_config
+    echo
     echo -e "${BLUE}=== System Service Setup ===${NC}"
     echo -e "${YELLOW}1. Configure network interface:${NC}"
     echo -e "   Edit /etc/snort/service/interface.conf to set your network interface"
@@ -950,9 +953,6 @@ show_deployment_summary() {
     echo -e "4. Monitor with: $0 logs"
     echo
     echo -e "${GREEN}DDoS Inspector deployment completed successfully!${NC}"
-    echo
-    echo -e "${BLUE}=== Current Configuration ===${NC}"
-    show_config
 }
 
 # ============================================================================
