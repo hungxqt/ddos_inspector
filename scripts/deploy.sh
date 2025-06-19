@@ -39,6 +39,8 @@ NETWORK_INTERFACE="eth0"
 ACTION="deploy"
 SHOW_HELP=false
 CONFIG_FILE_PATH=""
+SKIP_SNORT=false
+SKIP_SERVICE=false
 
 # ============================================================================
 # SHARED LOGGING HELPERS
@@ -240,6 +242,13 @@ find_snort_binary() {
 
 # Function to discover and validate Snort binary
 discover_snort_binary() {
+    if [ "$SKIP_SNORT" = "true" ]; then
+        log_info "Skipping Snort binary discovery (--no-snort flag specified)"
+        SNORT_BINARY=""
+        export SNORT_BINARY
+        return 0
+    fi
+    
     log_info "Searching for Snort binary"
     
     SNORT_BINARY=$(find_snort_binary)
@@ -303,6 +312,8 @@ show_help() {
     echo -e "  ${YELLOW}-h, --help${NC}              Show this help message"
     echo -e "  ${YELLOW}--show-config${NC}           Show current configuration from .env"
     echo -e "  ${YELLOW}-i, --interface IFACE${NC}   Set network interface (default: eth0)"
+    echo -e "  ${YELLOW}--no-snort${NC}              Skip Snort installation and discovery"
+    echo -e "  ${YELLOW}--skip-service${NC}          Skip systemd service installation"
     echo
     echo -e "${BLUE}COMMANDS:${NC}"
     echo -e "  ${YELLOW}deploy, --deploy${NC}        Deploy DDoS Inspector (default)"
@@ -321,6 +332,9 @@ show_help() {
     echo -e "${BLUE}EXAMPLES:${NC}"
     echo "  $0                           # Deploy with default settings"
     echo "  $0 --interface enp0s3        # Deploy with specific interface"
+    echo "  $0 --no-snort                # Deploy without Snort (plugin only)"
+    echo "  $0 --skip-service            # Deploy without systemd service"
+    echo "  $0 --no-snort --skip-service # Deploy minimal setup (no Snort, no service)"
     echo "  $0 start                     # Start the service"
     echo "  $0 --stop                    # Stop the service"
     echo "  $0 status                    # Check service status"
@@ -415,13 +429,24 @@ install_dependencies() {
     log_info "Installing system dependencies"
     
     if [ -f "$SCRIPT_DIR/install_dependencies.sh" ]; then
-        if "$SCRIPT_DIR/install_dependencies.sh"; then
+        # Pass --no-snort flag if SKIP_SNORT is true
+        local install_args=""
+        if [ "$SKIP_SNORT" = "true" ]; then
+            install_args="--no-snort"
+            log_info "Passing --no-snort flag to dependency installation"
+        fi
+        
+        if "$SCRIPT_DIR/install_dependencies.sh" $install_args; then
             log_success "Dependencies installed successfully"
             
-            # Verify dependencies are actually available
-            if ! verify_dependencies; then
-                log_error "Critical dependencies are missing after installation"
-                return 1
+            # Verify dependencies are actually available (skip if Snort is skipped)
+            if [ "$SKIP_SNORT" != "true" ]; then
+                if ! verify_dependencies; then
+                    log_error "Critical dependencies are missing after installation"
+                    return 1
+                fi
+            else
+                log_info "Skipping dependency verification (--no-snort specified)"
             fi
         else
             log_error "Dependency installation failed"
@@ -964,6 +989,14 @@ deploy_ddos_inspector() {
     log_info "Starting DDoS Inspector Deployment"
     log_info "Network Interface: $NETWORK_INTERFACE"
     
+    if [ "$SKIP_SNORT" = "true" ]; then
+        log_info "Snort installation and discovery skipped (--no-snort flag)"
+    fi
+    
+    if [ "$SKIP_SERVICE" = "true" ]; then
+        log_info "Systemd service installation skipped (--skip-service flag)"
+    fi
+    
     # Step 1: Validate environment
     validate_env_config || {
         log_error "Environment validation failed"
@@ -976,66 +1009,99 @@ deploy_ddos_inspector() {
         return 1
     }
     
-    # Step 3: Install dependencies
-    install_dependencies || {
-        log_error "Dependency installation failed"
-        return 1
-    }
-    
-    # Step 4: Discover Snort binary
-    discover_snort_binary || {
-        log_error "Snort binary discovery failed"
-        return 1
-    }
-    
-    # Step 5: Find Snort headers
-    find_snort_headers || {
-        log_error "Snort headers not found"
-        return 1
-    }
+    # Step 3: Install dependencies (skip if --no-snort)
+    if [ "$SKIP_SNORT" != "true" ]; then
+        install_dependencies || {
+            log_error "Dependency installation failed"
+            return 1
+        }
+        
+        # Step 4: Discover Snort binary
+        discover_snort_binary || {
+            log_error "Snort binary discovery failed"
+            return 1
+        }
+        
+        # Step 5: Find Snort headers
+        find_snort_headers || {
+            log_error "Snort headers not found"
+            return 1
+        }
+    else
+        log_info "Skipping dependency installation, Snort binary discovery, and header search"
+    fi
     
     log_success "Prerequisites check passed"
     
-    # Step 6: Build the plugin
-    build_plugin || {
-        log_error "Plugin build failed"
-        return 1
-    }
+    # Step 6: Build the plugin (skip if --no-snort since we need Snort headers)
+    if [ "$SKIP_SNORT" != "true" ]; then
+        build_plugin || {
+            log_error "Plugin build failed"
+            return 1
+        }
+        
+        # Step 7: Install the plugin
+        install_plugin || {
+            log_error "Plugin installation failed"
+            return 1
+        }
+    else
+        log_info "Skipping plugin build and installation (requires Snort headers)"
+    fi
     
-    # Step 7: Install the plugin
-    install_plugin || {
-        log_error "Plugin installation failed"
-        return 1
-    }
+    # Step 8: Install configuration files (skip if --no-snort)
+    if [ "$SKIP_SNORT" != "true" ]; then
+        install_config_files || {
+            log_error "Configuration installation failed"
+            return 1
+        }
+    else
+        log_info "Skipping configuration file installation"
+    fi
     
-    # Step 8: Install configuration files
-    install_config_files || {
-        log_error "Configuration installation failed"
-        return 1
-    }
+    # Step 9: Create systemd service (skip if --skip-service or --no-snort)
+    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+        create_systemd_service || {
+            log_error "Service creation failed"
+            return 1
+        }
+    else
+        if [ "$SKIP_SERVICE" = "true" ]; then
+            log_info "Skipping systemd service creation (--skip-service flag specified)"
+        fi
+        if [ "$SKIP_SNORT" = "true" ]; then
+            log_info "Skipping systemd service creation (--no-snort flag specified)"
+        fi
+    fi
     
-    # Step 9: Create systemd service
-    create_systemd_service || {
-        log_error "Service creation failed"
-        return 1
-    }
-    
-    # Step 10: Setup firewall
+    # Step 10: Setup firewall (always run, independent of Snort)
     setup_firewall || {
         log_error "Firewall setup failed"
         return 1
     }
     
-    # Step 11: Verify installation
-    verify_installation || {
-        log_error "Installation verification failed"
-        return 1
-    }
+    # Step 11: Verify installation (skip plugin verification if --no-snort)
+    if [ "$SKIP_SNORT" != "true" ]; then
+        verify_installation || {
+            log_error "Installation verification failed"
+            return 1
+        }
+    else
+        log_info "Skipping plugin installation verification"
+    fi
     
     # Step 12: Show summary
     show_deployment_summary
     
-    log_success "DDoS Inspector deployment completed successfully"
+    if [ "$SKIP_SNORT" = "true" ] && [ "$SKIP_SERVICE" = "true" ]; then
+        log_success "DDoS Inspector deployment completed successfully (without Snort components and systemd service)"
+    elif [ "$SKIP_SNORT" = "true" ]; then
+        log_success "DDoS Inspector deployment completed successfully (without Snort components)"
+    elif [ "$SKIP_SERVICE" = "true" ]; then
+        log_success "DDoS Inspector deployment completed successfully (without systemd service)"
+    else
+        log_success "DDoS Inspector deployment completed successfully"
+    fi
     return 0
 }
 
@@ -1053,6 +1119,10 @@ handle_service_action() {
     case $action in
         test-config|show-plugins)
             if [ -z "${SNORT_BINARY:-}" ]; then
+                if [ "$SKIP_SNORT" = "true" ]; then
+                    log_error "Cannot perform '$action' with --no-snort flag (Snort binary required)"
+                    return 1
+                fi
                 discover_snort_binary || {
                     log_error "Snort binary not found. Please ensure Snort 3 is installed."
                     return 1
@@ -1238,6 +1308,14 @@ main() {
                     log_error "--interface requires an interface name"
                     exit 1
                 fi
+                ;;
+            --no-snort)
+                SKIP_SNORT=true
+                shift
+                ;;
+            --skip-service)
+                SKIP_SERVICE=true
+                shift
                 ;;
             --start|start)
                 action="start"
