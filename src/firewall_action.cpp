@@ -342,10 +342,10 @@ void FirewallAction::drop_privileges() {
         return;
     }
     
-    // FIXED: Ensure inheritable capabilities are cleared
-    if (cap_set_flag(caps, CAP_INHERITABLE, 2, cap_values, CAP_CLEAR) != 0) {
+    // FIXED: Set inheritable capabilities for ambient elevation
+    if (cap_set_flag(caps, CAP_INHERITABLE, 2, cap_values, CAP_SET) != 0) {
         cap_free(caps);
-        log_firewall_action("ERROR", "Failed to clear inheritable capabilities", errno);
+        log_firewall_action("ERROR", "Failed to set inheritable capabilities", errno);
         return;
     }
     
