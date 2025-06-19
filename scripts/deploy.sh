@@ -39,8 +39,8 @@ NETWORK_INTERFACE="eth0"
 ACTION="deploy"
 SHOW_HELP=false
 CONFIG_FILE_PATH=""
-SKIP_SNORT=false
 SKIP_SERVICE=false
+SKIP_DEPS=false
 
 # ============================================================================
 # SHARED LOGGING HELPERS
@@ -242,13 +242,6 @@ find_snort_binary() {
 
 # Function to discover and validate Snort binary
 discover_snort_binary() {
-    if [ "$SKIP_SNORT" = "true" ]; then
-        log_info "Skipping Snort binary discovery (--no-snort flag specified)"
-        SNORT_BINARY=""
-        export SNORT_BINARY
-        return 0
-    fi
-    
     log_info "Searching for Snort binary"
     
     SNORT_BINARY=$(find_snort_binary)
@@ -312,8 +305,8 @@ show_help() {
     echo -e "  ${YELLOW}-h, --help${NC}              Show this help message"
     echo -e "  ${YELLOW}--show-config${NC}           Show current configuration from .env"
     echo -e "  ${YELLOW}-i, --interface IFACE${NC}   Set network interface (default: eth0)"
-    echo -e "  ${YELLOW}--no-snort${NC}              Skip Snort installation and discovery"
     echo -e "  ${YELLOW}--no-service${NC}            Skip systemd service installation"
+    echo -e "  ${YELLOW}--skip-deps${NC}             Skip dependency installation (assumes dependencies already installed)"
     echo
     echo -e "${BLUE}COMMANDS:${NC}"
     echo -e "  ${YELLOW}deploy, --deploy${NC}        Deploy DDoS Inspector (default)"
@@ -332,9 +325,8 @@ show_help() {
     echo -e "${BLUE}EXAMPLES:${NC}"
     echo "  $0                           # Deploy with default settings"
     echo "  $0 --interface enp0s3        # Deploy with specific interface"
-    echo "  $0 --no-snort                # Deploy without Snort (plugin only)"
+    echo "  $0 --skip-deps               # Build plugin without installing dependencies"
     echo "  $0 --no-service              # Deploy without systemd service"
-    echo "  $0 --no-snort --no-service   # Deploy minimal setup (no Snort, no service)"
     echo "  $0 start                     # Start the service"
     echo "  $0 --stop                    # Stop the service"
     echo "  $0 status                    # Check service status"
@@ -429,24 +421,13 @@ install_dependencies() {
     log_info "Installing system dependencies"
     
     if [ -f "$SCRIPT_DIR/install_dependencies.sh" ]; then
-        # Pass --no-snort flag if SKIP_SNORT is true
-        local install_args=""
-        if [ "$SKIP_SNORT" = "true" ]; then
-            install_args="--no-snort"
-            log_info "Passing --no-snort flag to dependency installation"
-        fi
-        
-        if "$SCRIPT_DIR/install_dependencies.sh" $install_args; then
+        if "$SCRIPT_DIR/install_dependencies.sh"; then
             log_success "Dependencies installed successfully"
             
-            # Verify dependencies are actually available (skip if Snort is skipped)
-            if [ "$SKIP_SNORT" != "true" ]; then
-                if ! verify_dependencies; then
-                    log_error "Critical dependencies are missing after installation"
-                    return 1
-                fi
-            else
-                log_info "Skipping dependency verification (--no-snort specified)"
+            # Verify dependencies are actually available
+            if ! verify_dependencies; then
+                log_error "Critical dependencies are missing after installation"
+                return 1
             fi
         else
             log_error "Dependency installation failed"
@@ -917,7 +898,7 @@ show_deployment_summary() {
     echo
     
     # Only show service setup if service was not skipped
-    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+    if [ "$SKIP_SERVICE" != "true" ]; then
         echo -e "${BLUE}=== System Service Setup ===${NC}"
         echo -e "${YELLOW}1. Configure network interface:${NC}"
         echo -e "   Edit /etc/snort/service/interface.conf to set your network interface"
@@ -940,29 +921,25 @@ show_deployment_summary() {
         echo
     fi
     
-    # Only show manual testing if Snort was not skipped
-    if [ "$SKIP_SNORT" != "true" ]; then
-        echo -e "${BLUE}=== Manual Testing (Alternative) ===${NC}"
-        echo -e "${YELLOW}1. Verify plugin installation:${NC}"
-        echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH --show-plugins | grep ddos_inspector"
-        echo
-        echo -e "${YELLOW}2. Test configuration syntax:${NC}"
-        echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -T"
-        echo
-        echo -e "${YELLOW}3. Run DDoS Inspector manually (for testing):${NC}"
-        echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -i $NETWORK_INTERFACE -A alert_fast"
-        echo
+    echo -e "${BLUE}=== Manual Testing (Alternative) ===${NC}"
+    echo -e "${YELLOW}1. Verify plugin installation:${NC}"
+    echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH --show-plugins | grep ddos_inspector"
+    echo
+    echo -e "${YELLOW}2. Test configuration syntax:${NC}"
+    echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -T"
+    echo
+    echo -e "${YELLOW}3. Run DDoS Inspector manually (for testing):${NC}"
+    echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -i $NETWORK_INTERFACE -A alert_fast"
+    echo
         echo -e "${YELLOW}4. Monitor alerts:${NC}"
         echo -e "   tail -f $LOG_DIR_SNORT/alert"
         echo
     fi
     
     echo -e "${BLUE}=== Configuration Files ===${NC}"
-    if [ "$SKIP_SNORT" != "true" ]; then
-        echo -e "${YELLOW}Plugin Binary:${NC} $SNORT_PLUGIN_PATH/libddos_inspector.so"
-        echo -e "${YELLOW}Configuration:${NC} /etc/snort/snort_ddos_config.lua"
-    fi
-    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+    echo -e "${YELLOW}Plugin Binary:${NC} $SNORT_PLUGIN_PATH/libddos_inspector.so"
+    echo -e "${YELLOW}Configuration:${NC} /etc/snort/snort_ddos_config.lua"
+    if [ "$SKIP_SERVICE" != "true" ]; then
         echo -e "${YELLOW}Service Config:${NC} /etc/snort/service/interface.conf"
         echo -e "${YELLOW}Service File:${NC} /etc/systemd/system/snort-ddos-inspector.service"
     fi
@@ -972,7 +949,7 @@ show_deployment_summary() {
     echo
     
     # Only show script management commands if service was installed
-    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+    if [ "$SKIP_SERVICE" != "true" ]; then
         echo -e "${BLUE}=== Quick Start Commands ===${NC}"
         echo -e "${YELLOW}Use this script for easy management:${NC}"
         echo -e "   $0 start           # Start the service"
@@ -984,29 +961,28 @@ show_deployment_summary() {
     fi
     
     echo -e "${BLUE}=== Deployment Summary ===${NC}"
-    if [ "$SKIP_SNORT" != "true" ]; then
-        echo -e "${GREEN}[SUCCESS] DDoS Inspector plugin compiled and installed${NC}"
-        echo -e "${GREEN}[SUCCESS] Configuration files in place${NC}"
+    
+    # Show dependency installation status
+    if [ "$SKIP_DEPS" = "true" ]; then
+        echo -e "${YELLOW}[SKIPPED] System dependencies (--skip-deps flag)${NC}"
     else
-        echo -e "${YELLOW}[SKIPPED] DDoS Inspector plugin (--no-snort flag)${NC}"
-        echo -e "${YELLOW}[SKIPPED] Configuration files (--no-snort flag)${NC}"
+        echo -e "${GREEN}[SUCCESS] System dependencies installed${NC}"
     fi
     
-    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+    echo -e "${GREEN}[SUCCESS] DDoS Inspector plugin compiled and installed${NC}"
+    echo -e "${GREEN}[SUCCESS] Configuration files in place${NC}"
+    
+    if [ "$SKIP_SERVICE" != "true" ]; then
         echo -e "${GREEN}[SUCCESS] System service configured${NC}"
     else
-        echo -e "${YELLOW}[SKIPPED] System service (--no-service or --no-snort flag)${NC}"
+        echo -e "${YELLOW}[SKIPPED] System service (--no-service flag)${NC}"
     fi
     
     echo -e "${GREEN}[SUCCESS] Firewall rules applied${NC}"
     echo
     
     echo -e "${BLUE}Next Steps:${NC}"
-    if [ "$SKIP_SNORT" = "true" ]; then
-        echo -e "1. Install Snort 3 manually if needed"
-        echo -e "2. Build and install the DDoS Inspector plugin"
-        echo -e "3. Configure Snort to use the plugin"
-    elif [ "$SKIP_SERVICE" = "true" ]; then
+    if [ "$SKIP_SERVICE" = "true" ]; then
         echo -e "1. Configure Snort service manually if needed"
         echo -e "2. Test the plugin: $0 test-config"
         echo -e "3. Verify plugin loading: $0 show-plugins"
@@ -1018,11 +994,7 @@ show_deployment_summary() {
     fi
     echo
     
-    if [ "$SKIP_SNORT" = "true" ] && [ "$SKIP_SERVICE" = "true" ]; then
-        echo -e "${GREEN}DDoS Inspector minimal deployment completed successfully!${NC}"
-    elif [ "$SKIP_SNORT" = "true" ]; then
-        echo -e "${GREEN}DDoS Inspector deployment completed successfully (without Snort components)!${NC}"
-    elif [ "$SKIP_SERVICE" = "true" ]; then
+    if [ "$SKIP_SERVICE" = "true" ]; then
         echo -e "${GREEN}DDoS Inspector deployment completed successfully (without systemd service)!${NC}"
     else
         echo -e "${GREEN}DDoS Inspector deployment completed successfully!${NC}"
@@ -1038,12 +1010,12 @@ deploy_ddos_inspector() {
     log_info "Starting DDoS Inspector Deployment"
     log_info "Network Interface: $NETWORK_INTERFACE"
     
-    if [ "$SKIP_SNORT" = "true" ]; then
-        log_info "Snort installation and discovery skipped (--no-snort flag)"
-    fi
-    
     if [ "$SKIP_SERVICE" = "true" ]; then
         log_info "Systemd service installation skipped (--no-service flag)"
+    fi
+    
+    if [ "$SKIP_DEPS" = "true" ]; then
+        log_info "Dependency installation skipped (--skip-deps flag)"
     fi
     
     # Step 1: Validate environment
@@ -1058,69 +1030,56 @@ deploy_ddos_inspector() {
         return 1
     }
     
-    # Step 3: Install dependencies (skip if --no-snort)
-    if [ "$SKIP_SNORT" != "true" ]; then
+    # Step 3: Install dependencies (skip if --skip-deps)
+    if [ "$SKIP_DEPS" != "true" ]; then
         install_dependencies || {
             log_error "Dependency installation failed"
             return 1
         }
-        
-        # Step 4: Discover Snort binary
-        discover_snort_binary || {
-            log_error "Snort binary discovery failed"
-            return 1
-        }
-        
-        # Step 5: Find Snort headers
-        find_snort_headers || {
-            log_error "Snort headers not found"
-            return 1
-        }
     else
-        log_info "Skipping dependency installation, Snort binary discovery, and header search"
+        log_info "Skipping dependency installation (--skip-deps flag specified)"
     fi
+    
+    # Step 4: Discover Snort binary
+    discover_snort_binary || {
+        log_error "Snort binary discovery failed"
+        return 1
+    }
+    
+    # Step 5: Find Snort headers
+    find_snort_headers || {
+        log_error "Snort headers not found"
+        return 1
+    }
     
     log_success "Prerequisites check passed"
     
-    # Step 6: Build the plugin (skip if --no-snort since we need Snort headers)
-    if [ "$SKIP_SNORT" != "true" ]; then
-        build_plugin || {
-            log_error "Plugin build failed"
-            return 1
-        }
-        
-        # Step 7: Install the plugin
-        install_plugin || {
-            log_error "Plugin installation failed"
-            return 1
-        }
-    else
-        log_info "Skipping plugin build and installation (requires Snort headers)"
-    fi
+    # Step 6: Build the plugin
+    build_plugin || {
+        log_error "Plugin build failed"
+        return 1
+    }
     
-    # Step 8: Install configuration files (skip if --no-snort)
-    if [ "$SKIP_SNORT" != "true" ]; then
-        install_config_files || {
-            log_error "Configuration installation failed"
-            return 1
-        }
-    else
-        log_info "Skipping configuration file installation"
-    fi
+    # Step 7: Install the plugin
+    install_plugin || {
+        log_error "Plugin installation failed"
+        return 1
+    }
     
-    # Step 9: Create systemd service (skip if --skip-service or --no-snort)
-    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+    # Step 8: Install configuration files
+    install_config_files || {
+        log_error "Configuration installation failed"
+        return 1
+    }
+    
+    # Step 9: Create systemd service (skip if --skip-service)
+    if [ "$SKIP_SERVICE" != "true" ]; then
         create_systemd_service || {
             log_error "Service creation failed"
             return 1
         }
     else
-        if [ "$SKIP_SERVICE" = "true" ]; then
-            log_info "Skipping systemd service creation (--no-service flag specified)"
-        fi
-        if [ "$SKIP_SNORT" = "true" ]; then
-            log_info "Skipping systemd service creation (--no-snort flag specified)"
-        fi
+        log_info "Skipping systemd service creation (--no-service flag specified)"
     fi
     
     # Step 10: Setup firewall (always run, independent of Snort)
@@ -1129,24 +1088,16 @@ deploy_ddos_inspector() {
         return 1
     }
     
-    # Step 11: Verify installation (skip plugin verification if --no-snort)
-    if [ "$SKIP_SNORT" != "true" ]; then
-        verify_installation || {
-            log_error "Installation verification failed"
-            return 1
-        }
-    else
-        log_info "Skipping plugin installation verification"
-    fi
+    # Step 11: Verify installation
+    verify_installation || {
+        log_error "Installation verification failed"
+        return 1
+    }
     
     # Step 12: Show summary
     show_deployment_summary
     
-    if [ "$SKIP_SNORT" = "true" ] && [ "$SKIP_SERVICE" = "true" ]; then
-        log_success "DDoS Inspector deployment completed successfully (without Snort components and systemd service)"
-    elif [ "$SKIP_SNORT" = "true" ]; then
-        log_success "DDoS Inspector deployment completed successfully (without Snort components)"
-    elif [ "$SKIP_SERVICE" = "true" ]; then
+    if [ "$SKIP_SERVICE" = "true" ]; then
         log_success "DDoS Inspector deployment completed successfully (without systemd service)"
     else
         log_success "DDoS Inspector deployment completed successfully"
@@ -1168,10 +1119,6 @@ handle_service_action() {
     case $action in
         test-config|show-plugins)
             if [ -z "${SNORT_BINARY:-}" ]; then
-                if [ "$SKIP_SNORT" = "true" ]; then
-                    log_error "Cannot perform '$action' with --no-snort flag (Snort binary required)"
-                    return 1
-                fi
                 discover_snort_binary || {
                     log_error "Snort binary not found. Please ensure Snort 3 is installed."
                     return 1
@@ -1358,12 +1305,12 @@ main() {
                     exit 1
                 fi
                 ;;
-            --no-snort)
-                SKIP_SNORT=true
-                shift
-                ;;
             --no-service)
                 SKIP_SERVICE=true
+                shift
+                ;;
+            --skip-deps)
+                SKIP_DEPS=true
                 shift
                 ;;
             --start|start)
@@ -1434,8 +1381,17 @@ main() {
     
     # Load configuration for all actions (except help)
     if [ "$action" != "help" ]; then
+        # Store command line arguments before loading config
+        local cli_network_interface="$NETWORK_INTERFACE"
+        
         load_default_config
         load_env_config
+        
+        # Restore command line arguments if they were set
+        if [ "$cli_network_interface" != "eth0" ]; then
+            NETWORK_INTERFACE="$cli_network_interface"
+        fi
+        
         export_config
     fi
     

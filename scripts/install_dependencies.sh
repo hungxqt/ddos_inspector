@@ -10,9 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source common functions library
 source "$SCRIPT_DIR/common_functions.sh"
 
-# Global flag to skip Snort installation
-SKIP_SNORT=false
-
 # Function to show help
 show_help() {
     echo "DDoS Inspector - System Dependencies Installation Script"
@@ -24,7 +21,6 @@ show_help() {
     echo "OPTIONS:"
     echo "  -h, --help         Show this help message"
     echo "  --uninstall        Uninstall all dependencies and configurations"
-    echo "  --no-snort         Skip Snort 3 installation"
     echo ""
     echo "DESCRIPTION:"
     echo "  This script installs all required system dependencies for the DDoS Inspector,"
@@ -33,7 +29,6 @@ show_help() {
     echo "EXAMPLES:"
     echo "  $0                 # Install all dependencies"
     echo "  $0 --uninstall     # Uninstall all dependencies"
-    echo "  $0 --no-snort      # Install dependencies except Snort 3"
     echo ""
     echo "NOTE:"
     echo "  This script requires root privileges for installation/uninstallation."
@@ -46,9 +41,6 @@ for arg in "$@"; do
         -h|--help)
             show_help
             exit 0
-            ;;
-        --no-snort)
-            SKIP_SNORT=true
             ;;
     esac
 done
@@ -375,27 +367,26 @@ make -j"$(nproc)"
 make install
 print_success "Google Test installed"
 
-# Build Snort 3 dependencies and Snort 3 itself (skip if --no-snort)
-if [ "$SKIP_SNORT" != "true" ]; then
-    # Build libdaq
-    print_info "Building libdaq..."
-    cd /opt
-    safe_git_clone https://github.com/snort3/libdaq.git libdaq
-    cd libdaq
-    ./bootstrap
-    ./configure
-    make -j"$(nproc)"
-    make install
-    print_success "libdaq installed"
+# Build Snort 3 dependencies and Snort 3 itself
+# Build libdaq
+print_info "Building libdaq..."
+cd /opt
+safe_git_clone https://github.com/snort3/libdaq.git libdaq
+cd libdaq
+./bootstrap
+./configure
+make -j"$(nproc)"
+make install
+print_success "libdaq installed"
 
-    # Build libdnet
-    print_info "Building libdnet..."
-    cd /opt
-    safe_git_clone https://github.com/dugsong/libdnet.git libdnet
-    cd libdnet
-    ./configure
-    make -j"$(nproc)"
-    make install
+# Build libdnet
+print_info "Building libdnet..."
+cd /opt
+safe_git_clone https://github.com/dugsong/libdnet.git libdnet
+cd libdnet
+./configure
+make -j"$(nproc)"
+make install
     print_success "libdnet installed"
 
     # Build LuaJIT
@@ -448,9 +439,6 @@ if [ "$SKIP_SNORT" != "true" ]; then
     chown -R snort:snort /var/log/snort
 
     print_success "Snort 3 installed successfully"
-else
-    print_info "Skipping Snort 3 and its dependencies installation (--no-snort flag specified)"
-fi
 
 # Install Docker if not present - TEMPORARILY DISABLED
 # if ! command -v docker &> /dev/null; then
@@ -573,13 +561,8 @@ print_success "All dependencies installed successfully!"
 echo ""
 echo -e "${CYAN}[SUMMARY] Installed Components:${NC}"
 echo -e "${GREEN}    [INSTALLED] Build Tools (GCC, CMake, Make)${NC}"
-if [ "$SKIP_SNORT" != "true" ]; then
-    echo -e "${GREEN}    [INSTALLED] Snort 3 Dependencies (libdaq, libdnet, LuaJIT)${NC}"
-    echo -e "${GREEN}    [INSTALLED] Snort 3 IDS/IPS Engine${NC}"
-else
-    echo -e "${YELLOW}    [SKIPPED] Snort 3 Dependencies (libdaq, libdnet, LuaJIT)${NC}"
-    echo -e "${YELLOW}    [SKIPPED] Snort 3 IDS/IPS Engine${NC}"
-fi
+echo -e "${GREEN}    [INSTALLED] Snort 3 Dependencies (libdaq, libdnet, LuaJIT)${NC}"
+echo -e "${GREEN}    [INSTALLED] Snort 3 IDS/IPS Engine${NC}"
 echo -e "${GREEN}    [INSTALLED] Development Libraries (OpenSSL, PCAP, PCRE2)${NC}"
 echo -e "${GREEN}    [INSTALLED] Testing Framework (Google Test)${NC}"
 echo -e "${GREEN}    [INSTALLED] Docker & Docker Compose${NC}"
@@ -590,21 +573,14 @@ echo -e "${GREEN}    [INSTALLED] Log rotation setup${NC}"
 echo ""
 print_info "Next Steps:"
 echo "   1. Logout and login again (for Docker group membership)"
-if [ "$SKIP_SNORT" != "true" ]; then
-    echo "   2. Run: ./scripts/deploy_host.sh"
-else
-    echo "   2. Run: ./scripts/deploy_host.sh --no-snort"
-fi
+echo "   2. Run: ./scripts/deploy_host.sh"
 echo ""
 
 # Verify installations
 print_info "Verifying installations..."
 echo "   CMake: $(cmake --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
 echo "   g++: $(g++ --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
-if [ "$SKIP_SNORT" != "true" ]; then
-    echo "   Snort 3: $(/usr/local/snort3/bin/snort --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
-else
-    echo "   Snort 3: SKIPPED"
+echo "   Snort 3: $(/usr/local/snort3/bin/snort --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
 fi
 echo "   Docker: $(docker --version 2>/dev/null || echo 'NOT FOUND')"
 echo "   Docker Compose: $(docker-compose --version 2>/dev/null || docker compose version 2>/dev/null || echo 'NOT FOUND')"
