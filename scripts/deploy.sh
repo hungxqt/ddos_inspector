@@ -982,7 +982,13 @@ deploy_ddos_inspector() {
         return 1
     }
     
-    # Step 4: Find Snort headers
+    # Step 4: Discover Snort binary
+    discover_snort_binary || {
+        log_error "Snort binary discovery failed"
+        return 1
+    }
+    
+    # Step 5: Find Snort headers
     find_snort_headers || {
         log_error "Snort headers not found"
         return 1
@@ -990,43 +996,43 @@ deploy_ddos_inspector() {
     
     log_success "Prerequisites check passed"
     
-    # Step 5: Build the plugin
+    # Step 6: Build the plugin
     build_plugin || {
         log_error "Plugin build failed"
         return 1
     }
     
-    # Step 6: Install the plugin
+    # Step 7: Install the plugin
     install_plugin || {
         log_error "Plugin installation failed"
         return 1
     }
     
-    # Step 7: Install configuration files
+    # Step 8: Install configuration files
     install_config_files || {
         log_error "Configuration installation failed"
         return 1
     }
     
-    # Step 8: Create systemd service
+    # Step 9: Create systemd service
     create_systemd_service || {
         log_error "Service creation failed"
         return 1
     }
     
-    # Step 9: Setup firewall
+    # Step 10: Setup firewall
     setup_firewall || {
         log_error "Firewall setup failed"
         return 1
     }
     
-    # Step 10: Verify installation
+    # Step 11: Verify installation
     verify_installation || {
         log_error "Installation verification failed"
         return 1
     }
     
-    # Step 11: Show summary
+    # Step 12: Show summary
     show_deployment_summary
     
     log_success "DDoS Inspector deployment completed successfully"
