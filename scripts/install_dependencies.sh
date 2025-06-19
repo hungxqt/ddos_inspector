@@ -195,6 +195,17 @@ uninstall_dependencies() {
     rm -rf /opt/libdaq
     rm -rf /opt/libdnet
     rm -rf /opt/luajit-2.0
+    rm -rf /opt/snort3
+    
+    # Remove Snort 3 installation
+    rm -rf /usr/local/snort3
+    rm -f /usr/local/bin/snort
+    rm -f /etc/ld.so.conf.d/snort3.conf
+    
+    # Remove snort user
+    if id "snort" &>/dev/null; then
+        userdel -r snort 2>/dev/null || true
+    fi
     
     # Remove custom CMake if installed
     if [ -f /usr/local/bin/cmake ] && [ ! -f /usr/bin/cmake ]; then
@@ -244,6 +255,7 @@ uninstall_dependencies() {
     echo -e "${CYAN}[SUMMARY] Removed Components:${NC}"
     echo -e "${GREEN}    [REMOVED] Build Tools (GCC, CMake, Make)${NC}"
     echo -e "${GREEN}    [REMOVED] Snort 3 Dependencies (libdaq, libdnet, LuaJIT)${NC}"
+    echo -e "${GREEN}    [REMOVED] Snort 3 IDS/IPS Engine${NC}"
     echo -e "${GREEN}    [REMOVED] Development Libraries (OpenSSL, PCAP, PCRE2)${NC}"
     echo -e "${GREEN}    [REMOVED] Testing Framework (Google Test)${NC}"
     echo -e "${GREEN}    [REMOVED] Docker & Docker Compose${NC}"
@@ -384,6 +396,48 @@ cd luajit-2.0
 make -j"$(nproc)"
 make install
 print_success "LuaJIT installed"
+
+# Build and install Snort 3
+print_info "Building Snort 3..."
+cd /opt
+safe_git_clone https://github.com/snort3/snort3.git snort3
+cd snort3
+mkdir -p build
+cd build
+
+# Configure Snort 3 with proper paths
+cmake .. \
+    -DCMAKE_INSTALL_PREFIX=/usr/local/snort3 \
+    -DENABLE_STATIC_DAQ=ON \
+    -DENABLE_TCMALLOC=ON \
+    -DENABLE_JEMALLOC=OFF \
+    -DENABLE_LARGE_PCAP=ON \
+    -DENABLE_SHELL=ON \
+    -DCMAKE_BUILD_TYPE=Release
+
+# Build and install
+make -j"$(nproc)"
+make install
+
+# Update library path
+echo "/usr/local/snort3/lib" > /etc/ld.so.conf.d/snort3.conf
+ldconfig
+
+# Create symlink for easier access
+ln -sf /usr/local/snort3/bin/snort /usr/local/bin/snort
+
+# Create snort user if it doesn't exist
+if ! id "snort" &>/dev/null; then
+    useradd -r -s /bin/false -d /var/log/snort snort
+fi
+
+# Create necessary directories
+mkdir -p /etc/snort
+mkdir -p /var/log/snort
+mkdir -p /usr/local/snort3/etc/snort
+chown -R snort:snort /var/log/snort
+
+print_success "Snort 3 installed successfully"
 
 # Install Docker if not present
 if ! command -v docker &> /dev/null; then
@@ -527,6 +581,7 @@ echo ""
 echo -e "${CYAN}[SUMMARY] Installed Components:${NC}"
 echo -e "${GREEN}    [INSTALLED] Build Tools (GCC, CMake, Make)${NC}"
 echo -e "${GREEN}    [INSTALLED] Snort 3 Dependencies (libdaq, libdnet, LuaJIT)${NC}"
+echo -e "${GREEN}    [INSTALLED] Snort 3 IDS/IPS Engine${NC}"
 echo -e "${GREEN}    [INSTALLED] Development Libraries (OpenSSL, PCAP, PCRE2)${NC}"
 echo -e "${GREEN}    [INSTALLED] Testing Framework (Google Test)${NC}"
 echo -e "${GREEN}    [INSTALLED] Docker & Docker Compose${NC}"
@@ -548,6 +603,7 @@ echo ""
 print_info "Verifying installations..."
 echo "   CMake: $(cmake --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
 echo "   g++: $(g++ --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
+echo "   Snort 3: $(/usr/local/snort3/bin/snort --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
 echo "   Docker: $(docker --version 2>/dev/null || echo 'NOT FOUND')"
 echo "   Docker Compose: $(docker-compose --version 2>/dev/null || docker compose version 2>/dev/null || echo 'NOT FOUND')"
 echo "   nftables: $(nft --version 2>/dev/null || echo 'NOT FOUND')"
