@@ -59,16 +59,16 @@ ddos_inspector = {
     rate_limited_ips_file = get_env("DDOS_RATE_LIMITED_IPS_FILE", "/var/log/ddos_inspector/rate_limited_ips.log"),
     
     -- Enhanced configuration options
-    config_profile = "web_server",  -- Options: default, strict, permissive, web_server, game_server
+    config_profile = "web_server",          -- Options: default, strict, permissive, web_server, game_server
     protected_networks = "192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,2001:db8::/32",  -- Added IPv6
-    log_level = "info",  -- Options: debug, info, warning, error
+    log_level = "info",                     -- Options: debug, info, warning, error
     enable_amplification_detection = true,  -- Enable amplification attack detection
     enable_adaptive_thresholds = true,      -- Enable adaptive threshold management
     enable_ipv6 = true,                     -- Enable IPv6 support
     enable_fragmentation_detection = true,  -- Enable fragment flood detection
-    max_tracked_ips = 10000,               -- Memory management limit
-    tarpit_enabled = true,                 -- Enable tarpit for slow down attacks
-    tcp_reset_enabled = true               -- Enable TCP reset for malicious connections
+    max_tracked_ips = 10000,                -- Memory management limit
+    tarpit_enabled = true,                  -- Enable tarpit for slow down attacks
+    tcp_reset_enabled = true                -- Enable TCP reset for malicious connections
 }
 
 -- Add DAQ configuration to use afpacket instead of pcap

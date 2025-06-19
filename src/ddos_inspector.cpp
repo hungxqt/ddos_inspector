@@ -513,6 +513,8 @@ static const Parameter ddos_params[] = {
 
 DdosInspectorModule::DdosInspectorModule() : Module(DDOS_NAME, DDOS_HELP, ddos_params)
 {
+    fprintf(stderr, "DDOS_DEBUG: DdosInspectorModule constructor called!\n");
+    fflush(stderr);
     // Initialize file paths from environment variables/env file with fallbacks
     metrics_file = getPathFromEnv("DDOS_METRICS_FILE", "/var/log/ddos_inspector/metrics.log");
     blocked_ips_file = getPathFromEnv("DDOS_BLOCKED_IPS_FILE", "/var/log/ddos_inspector/blocked_ips.log"); 
@@ -821,6 +823,8 @@ void DdosInspectorModule::reloadTestingConfiguration() {
 
 DdosInspector::DdosInspector(DdosInspectorModule *mod)
 {
+    fprintf(stderr, "DDOS_DEBUG: DdosInspector constructor called!\n");
+    fflush(stderr);
     std::stringstream init_msg;
     init_msg << "DDoS Inspector engine starting with configuration:\n"
              << "   - Allow ICMP: " << (mod->allow_icmp ? "enabled" : "disabled") << '\n'
@@ -2184,6 +2188,8 @@ bool DdosInspector::checkForFragmentation(snort::Packet *p, const std::string &s
 
 static Module *mod_ctor()
 {
+    fprintf(stderr, "DDOS_DEBUG: mod_ctor() called!\n");
+    fflush(stderr);
     return new DdosInspectorModule;
 }
 
@@ -2223,5 +2229,12 @@ static const InspectApi ddos_api = {
 //-------------------------------------------------------------------------
 // plugin
 //-------------------------------------------------------------------------
+
+// Global constructor to detect plugin loading
+__attribute__((constructor))
+static void plugin_loaded() {
+    fprintf(stderr, "DDOS_DEBUG: Plugin library loaded!\n");
+    fflush(stderr);
+}
 
 SO_PUBLIC const BaseApi *snort_plugins[] = {&ddos_api.base, nullptr};
