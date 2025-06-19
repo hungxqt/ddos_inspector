@@ -915,69 +915,118 @@ show_deployment_summary() {
     echo -e "${BLUE}=== Current Configuration ===${NC}"
     show_config
     echo
-    echo -e "${BLUE}=== System Service Setup ===${NC}"
-    echo -e "${YELLOW}1. Configure network interface:${NC}"
-    echo -e "   Edit /etc/snort/service/interface.conf to set your network interface"
-    echo -e "   Current setting: eth0 (change if needed)"
-    echo
-    echo -e "${YELLOW}2. Enable and start the service:${NC}"
-    echo -e "   sudo systemctl enable snort-ddos-inspector"
-    echo -e "   sudo systemctl start snort-ddos-inspector"
-    echo
-    echo -e "${YELLOW}3. Check service status:${NC}"
-    echo -e "   sudo systemctl status snort-ddos-inspector"
-    echo
-    echo -e "${YELLOW}4. View service logs:${NC}"
-    echo -e "   sudo journalctl -u snort-ddos-inspector -f"
-    echo
-    echo -e "${YELLOW}5. Control the service:${NC}"
-    echo -e "   sudo systemctl stop snort-ddos-inspector     # Stop service"
-    echo -e "   sudo systemctl restart snort-ddos-inspector  # Restart service"
-    echo -e "   sudo systemctl reload snort-ddos-inspector   # Reload config"
-    echo
-    echo -e "${BLUE}=== Manual Testing (Alternative) ===${NC}"
-    echo -e "${YELLOW}1. Verify plugin installation:${NC}"
-    echo -e "   sudo $SNORT_BINARY --plugin-path $SNORT_PLUGIN_PATH --show-plugins | grep ddos_inspector"
-    echo
-    echo -e "${YELLOW}2. Test configuration syntax:${NC}"
-    echo -e "   sudo $SNORT_BINARY --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -T"
-    echo
-    echo -e "${YELLOW}3. Run DDoS Inspector manually (for testing):${NC}"
-    echo -e "   sudo $SNORT_BINARY --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -i $NETWORK_INTERFACE -A alert_fast"
-    echo
-    echo -e "${YELLOW}4. Monitor alerts:${NC}"
-    echo -e "   tail -f $LOG_DIR_SNORT/alert"
-    echo
+    
+    # Only show service setup if service was not skipped
+    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+        echo -e "${BLUE}=== System Service Setup ===${NC}"
+        echo -e "${YELLOW}1. Configure network interface:${NC}"
+        echo -e "   Edit /etc/snort/service/interface.conf to set your network interface"
+        echo -e "   Current setting: $NETWORK_INTERFACE (change if needed)"
+        echo
+        echo -e "${YELLOW}2. Enable and start the service:${NC}"
+        echo -e "   sudo systemctl enable snort-ddos-inspector"
+        echo -e "   sudo systemctl start snort-ddos-inspector"
+        echo
+        echo -e "${YELLOW}3. Check service status:${NC}"
+        echo -e "   sudo systemctl status snort-ddos-inspector"
+        echo
+        echo -e "${YELLOW}4. View service logs:${NC}"
+        echo -e "   sudo journalctl -u snort-ddos-inspector -f"
+        echo
+        echo -e "${YELLOW}5. Control the service:${NC}"
+        echo -e "   sudo systemctl stop snort-ddos-inspector     # Stop service"
+        echo -e "   sudo systemctl restart snort-ddos-inspector  # Restart service"
+        echo -e "   sudo systemctl reload snort-ddos-inspector   # Reload config"
+        echo
+    fi
+    
+    # Only show manual testing if Snort was not skipped
+    if [ "$SKIP_SNORT" != "true" ]; then
+        echo -e "${BLUE}=== Manual Testing (Alternative) ===${NC}"
+        echo -e "${YELLOW}1. Verify plugin installation:${NC}"
+        echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH --show-plugins | grep ddos_inspector"
+        echo
+        echo -e "${YELLOW}2. Test configuration syntax:${NC}"
+        echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -T"
+        echo
+        echo -e "${YELLOW}3. Run DDoS Inspector manually (for testing):${NC}"
+        echo -e "   sudo ${SNORT_BINARY:-/usr/local/bin/snort} --plugin-path $SNORT_PLUGIN_PATH -c /etc/snort/snort_ddos_config.lua -i $NETWORK_INTERFACE -A alert_fast"
+        echo
+        echo -e "${YELLOW}4. Monitor alerts:${NC}"
+        echo -e "   tail -f $LOG_DIR_SNORT/alert"
+        echo
+    fi
+    
     echo -e "${BLUE}=== Configuration Files ===${NC}"
-    echo -e "${YELLOW}Plugin Binary:${NC} $SNORT_PLUGIN_PATH/libddos_inspector.so"
-    echo -e "${YELLOW}Configuration:${NC} /etc/snort/snort_ddos_config.lua"
-    echo -e "${YELLOW}Service Config:${NC} /etc/snort/service/interface.conf"
-    echo -e "${YELLOW}Service File:${NC} /etc/systemd/system/snort-ddos-inspector.service"
+    if [ "$SKIP_SNORT" != "true" ]; then
+        echo -e "${YELLOW}Plugin Binary:${NC} $SNORT_PLUGIN_PATH/libddos_inspector.so"
+        echo -e "${YELLOW}Configuration:${NC} /etc/snort/snort_ddos_config.lua"
+    fi
+    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+        echo -e "${YELLOW}Service Config:${NC} /etc/snort/service/interface.conf"
+        echo -e "${YELLOW}Service File:${NC} /etc/systemd/system/snort-ddos-inspector.service"
+    fi
     echo -e "${YELLOW}Log Directory:${NC} $LOG_DIR_SNORT/ (Snort alerts)"
     echo -e "${YELLOW}Stats Directory:${NC} $LOG_DIR_DDOS/ (DDoS Inspector metrics)"
     echo -e "${YELLOW}Environment Config:${NC} $ENV_FILE"
     echo
-    echo -e "${BLUE}=== Quick Start Commands ===${NC}"
-    echo -e "${YELLOW}Use this script for easy management:${NC}"
-    echo -e "   $0 start           # Start the service"
-    echo -e "   $0 status          # Check status"
-    echo -e "   $0 logs            # View logs"
-    echo -e "   $0 test-config     # Test configuration"
-    echo -e "   $0 show-plugins    # Verify plugin loading"
-    echo
-    echo -e "${GREEN}=== Deployment Summary ===${NC}"
-    echo -e "${GREEN}[SUCCESS] DDoS Inspector plugin compiled and installed${NC}"
-    echo -e "${GREEN}[SUCCESS] System service configured${NC}"
+    
+    # Only show script management commands if service was installed
+    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+        echo -e "${BLUE}=== Quick Start Commands ===${NC}"
+        echo -e "${YELLOW}Use this script for easy management:${NC}"
+        echo -e "   $0 start           # Start the service"
+        echo -e "   $0 status          # Check status"
+        echo -e "   $0 logs            # View logs"
+        echo -e "   $0 test-config     # Test configuration"
+        echo -e "   $0 show-plugins    # Verify plugin loading"
+        echo
+    fi
+    
+    echo -e "${BLUE}=== Deployment Summary ===${NC}"
+    if [ "$SKIP_SNORT" != "true" ]; then
+        echo -e "${GREEN}[SUCCESS] DDoS Inspector plugin compiled and installed${NC}"
+        echo -e "${GREEN}[SUCCESS] Configuration files in place${NC}"
+    else
+        echo -e "${YELLOW}[SKIPPED] DDoS Inspector plugin (--no-snort flag)${NC}"
+        echo -e "${YELLOW}[SKIPPED] Configuration files (--no-snort flag)${NC}"
+    fi
+    
+    if [ "$SKIP_SERVICE" != "true" ] && [ "$SKIP_SNORT" != "true" ]; then
+        echo -e "${GREEN}[SUCCESS] System service configured${NC}"
+    else
+        echo -e "${YELLOW}[SKIPPED] System service (--no-service or --no-snort flag)${NC}"
+    fi
+    
     echo -e "${GREEN}[SUCCESS] Firewall rules applied${NC}"
-    echo -e "${GREEN}[SUCCESS] Configuration files in place${NC}"
     echo
+    
     echo -e "${BLUE}Next Steps:${NC}"
-    echo -e "1. Adjust network interface in /etc/snort/service/interface.conf if needed"
-    echo -e "2. Review and customize /etc/snort/snort_ddos_config.lua as required"
-    echo -e "3. Start the service: $0 start"
-    echo -e "4. Monitor with: $0 logs"
+    if [ "$SKIP_SNORT" = "true" ]; then
+        echo -e "1. Install Snort 3 manually if needed"
+        echo -e "2. Build and install the DDoS Inspector plugin"
+        echo -e "3. Configure Snort to use the plugin"
+    elif [ "$SKIP_SERVICE" = "true" ]; then
+        echo -e "1. Configure Snort service manually if needed"
+        echo -e "2. Test the plugin: $0 test-config"
+        echo -e "3. Verify plugin loading: $0 show-plugins"
+    else
+        echo -e "1. Adjust network interface in /etc/snort/service/interface.conf if needed"
+        echo -e "2. Review and customize /etc/snort/snort_ddos_config.lua as required"
+        echo -e "3. Start the service: $0 start"
+        echo -e "4. Monitor with: $0 logs"
+    fi
     echo
-    echo -e "${GREEN}DDoS Inspector deployment completed successfully!${NC}"
+    
+    if [ "$SKIP_SNORT" = "true" ] && [ "$SKIP_SERVICE" = "true" ]; then
+        echo -e "${GREEN}DDoS Inspector minimal deployment completed successfully!${NC}"
+    elif [ "$SKIP_SNORT" = "true" ]; then
+        echo -e "${GREEN}DDoS Inspector deployment completed successfully (without Snort components)!${NC}"
+    elif [ "$SKIP_SERVICE" = "true" ]; then
+        echo -e "${GREEN}DDoS Inspector deployment completed successfully (without systemd service)!${NC}"
+    else
+        echo -e "${GREEN}DDoS Inspector deployment completed successfully!${NC}"
+    fi
 }
 
 # ============================================================================
@@ -1385,6 +1434,7 @@ main() {
     
     # Load configuration for all actions (except help)
     if [ "$action" != "help" ]; then
+        load_default_config
         load_env_config
         export_config
     fi
