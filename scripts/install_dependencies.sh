@@ -439,50 +439,52 @@ chown -R snort:snort /var/log/snort
 
 print_success "Snort 3 installed successfully"
 
-# Install Docker if not present
-if ! command -v docker &> /dev/null; then
-    print_info "Installing Docker..."
-    
-    # Add Docker's official GPG key
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    
-    # Add Docker repository
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    # Install Docker
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    
-    # Start and enable Docker
-    systemctl start docker
-    systemctl enable docker
-    
-    # Add current user to docker group (if not root)
-    if [ "$SUDO_USER" ]; then
-        usermod -aG docker "$SUDO_USER"
-        print_success "Added $SUDO_USER to docker group"
-    fi
-    
-    print_success "Docker installed successfully"
-else
-    print_success "Docker is already installed"
-fi
+# Install Docker if not present - TEMPORARILY DISABLED
+# if ! command -v docker &> /dev/null; then
+#     print_info "Installing Docker..."
+#     
+#     # Add Docker's official GPG key
+#     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+#     
+#     # Add Docker repository
+#     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+#     
+#     # Install Docker
+#     apt-get update
+#     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+#     
+#     # Start and enable Docker
+#     systemctl start docker
+#     systemctl enable docker
+#     
+#     # Add current user to docker group (if not root)
+#     if [ "$SUDO_USER" ]; then
+#         usermod -aG docker "$SUDO_USER"
+#         print_success "Added $SUDO_USER to docker group"
+#     fi
+#     
+#     print_success "Docker installed successfully"
+# else
+#     print_success "Docker is already installed"
+# fi
+print_info "Docker installation temporarily disabled"
 
-# Install Docker Compose (standalone) if not available
-if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-    print_info "Installing Docker Compose..."
-    
-    # Get latest version
-    DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
-    
-    # Download and install
-    curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
-    
-    print_success "Docker Compose installed successfully"
-else
-    print_success "Docker Compose is already available"
-fi
+# Install Docker Compose (standalone) if not available - TEMPORARILY DISABLED
+# if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+#     print_info "Installing Docker Compose..."
+#     
+#     # Get latest version
+#     DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
+#     
+#     # Download and install
+#     curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+#     chmod +x /usr/local/bin/docker-compose
+#     
+#     print_success "Docker Compose installed successfully"
+# else
+#     print_success "Docker Compose is already available"
+# fi
+print_info "Docker Compose installation temporarily disabled"
 
 # Install nftables
 if ! command -v nft &> /dev/null; then
