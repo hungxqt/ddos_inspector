@@ -486,19 +486,20 @@ print_info "Docker installation temporarily disabled"
 # fi
 print_info "Docker Compose installation temporarily disabled"
 
-# Install nftables
-if ! command -v nft &> /dev/null; then
-    print_info "Installing nftables..."
-    apt-get install -y nftables
-    
-    # Enable nftables service
-    systemctl enable nftables
-    systemctl start nftables
-    
-    print_success "nftables installed and enabled"
-else
-    print_success "nftables is already installed"
-fi
+# Install nftables - TEMPORARILY DISABLED
+# if ! command -v nft &> /dev/null; then
+#     print_info "Installing nftables..."
+#     apt-get install -y nftables
+#     
+#     # Enable nftables service
+#     systemctl enable nftables
+#     systemctl start nftables
+#     
+#     print_success "nftables installed and enabled"
+# else
+#     print_success "nftables is already installed"
+# fi
+print_info "nftables installation temporarily disabled"
 
 # Install network testing tools (optional but useful)
 print_info "Installing network testing tools..."
