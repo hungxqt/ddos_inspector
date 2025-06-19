@@ -313,7 +313,7 @@ show_help() {
     echo -e "  ${YELLOW}--show-config${NC}           Show current configuration from .env"
     echo -e "  ${YELLOW}-i, --interface IFACE${NC}   Set network interface (default: eth0)"
     echo -e "  ${YELLOW}--no-snort${NC}              Skip Snort installation and discovery"
-    echo -e "  ${YELLOW}--skip-service${NC}          Skip systemd service installation"
+    echo -e "  ${YELLOW}--no-service${NC}            Skip systemd service installation"
     echo
     echo -e "${BLUE}COMMANDS:${NC}"
     echo -e "  ${YELLOW}deploy, --deploy${NC}        Deploy DDoS Inspector (default)"
@@ -333,8 +333,8 @@ show_help() {
     echo "  $0                           # Deploy with default settings"
     echo "  $0 --interface enp0s3        # Deploy with specific interface"
     echo "  $0 --no-snort                # Deploy without Snort (plugin only)"
-    echo "  $0 --skip-service            # Deploy without systemd service"
-    echo "  $0 --no-snort --skip-service # Deploy minimal setup (no Snort, no service)"
+    echo "  $0 --no-service              # Deploy without systemd service"
+    echo "  $0 --no-snort --no-service   # Deploy minimal setup (no Snort, no service)"
     echo "  $0 start                     # Start the service"
     echo "  $0 --stop                    # Stop the service"
     echo "  $0 status                    # Check service status"
@@ -994,7 +994,7 @@ deploy_ddos_inspector() {
     fi
     
     if [ "$SKIP_SERVICE" = "true" ]; then
-        log_info "Systemd service installation skipped (--skip-service flag)"
+        log_info "Systemd service installation skipped (--no-service flag)"
     fi
     
     # Step 1: Validate environment
@@ -1067,7 +1067,7 @@ deploy_ddos_inspector() {
         }
     else
         if [ "$SKIP_SERVICE" = "true" ]; then
-            log_info "Skipping systemd service creation (--skip-service flag specified)"
+            log_info "Skipping systemd service creation (--no-service flag specified)"
         fi
         if [ "$SKIP_SNORT" = "true" ]; then
             log_info "Skipping systemd service creation (--no-snort flag specified)"
@@ -1313,7 +1313,7 @@ main() {
                 SKIP_SNORT=true
                 shift
                 ;;
-            --skip-service)
+            --no-service)
                 SKIP_SERVICE=true
                 shift
                 ;;
