@@ -997,6 +997,7 @@ show_deployment_summary() {
         echo -e "${GREEN}DDoS Inspector deployment completed successfully (without systemd service)!${NC}"
     else
         echo -e "${GREEN}DDoS Inspector deployment completed successfully!${NC}"
+        echo
     fi
 }
 
