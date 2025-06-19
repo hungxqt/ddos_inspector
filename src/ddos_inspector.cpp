@@ -5,6 +5,13 @@
 #include "stats_engine.hpp"
 #include "file_logger.hpp"
 
+// Global constructor to debug plugin loading
+__attribute__((constructor))
+void debug_plugin_load() {
+    fprintf(stderr, "DDOS_INSPECTOR_DEBUG: Plugin library loaded!\n");
+    fflush(stderr);
+}
+
 #ifdef TESTING
 #include "testing_config.hpp"
 #endif
